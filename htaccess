@@ -1,0 +1,6 @@
+# Evita que los archivos guardados aquí se ejecuten como scripts,
+# incluso si alguien lograra subir algo con otra extensión.
+<FilesMatch "\.(php|phtml|php\d)$">
+    Require all denied
+</FilesMatch>
+Options -ExecCGI -Indexes
