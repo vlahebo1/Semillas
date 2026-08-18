@@ -1,0 +1,1782 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Carné del Guardián y Pasaporte de Semilla — Banco de Semillas</title>
+<!-- TensorFlow.js y BlazeFace con carga asíncrona segura -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
+<!-- Leaflet.js para mapas -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<!-- html2canvas + jsPDF para exportar la ficha en PDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+:root{
+  --bg:#ffffff;
+  --panel:#f4f4f4;
+  --panel-2:#eaeaea;
+  --line:#000000;
+  --line-soft:#666666;
+  --text:#000000;
+  --text-dim:#555555;
+  --accent:#000000;
+  --font-ui: Tahoma, Geneva, sans-serif;
+  --font-data: 'Courier New', monospace;
+}
+
+*{box-sizing:border-box;}
+html,body{margin:0; min-height:100%;}
+body{
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  padding:44px 18px 64px;
+  display:flex;
+  justify-content:center;
+}
+
+.sheet{width:100%; max-width:720px;}
+.masthead{display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid var(--line); padding-bottom:14px; margin-bottom:20px; gap:16px;}
+
+.stepper{display:flex; gap:6px; margin-bottom:22px;}
+.step-pill{flex:1; border:1px solid var(--line); padding:9px 10px; text-align:center; font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase; color:var(--text-dim); background:var(--panel);}
+.step-pill.active{color:var(--bg); border-color:var(--line); background:var(--text); font-weight:bold;}
+.step-pill.done{color:var(--text); border-color:var(--line); background:var(--panel-2); font-weight:bold;}
+.step-pill .n{display:block; font-size:9px; opacity:0.8; margin-bottom:2px;}
+
+.card{border:2px solid var(--line); background:var(--panel); padding:18px; position:relative;}
+.card::before{content:''; position:absolute; inset:6px; border:1px dashed var(--line-soft); pointer-events:none;}
+
+.viewfinder{
+  position:relative; aspect-ratio:4/3; overflow:hidden; border:1px solid var(--line);
+  background-color:#000000;
+}
+.viewfinder video{width:100%; height:100%; object-fit:cover; display:block; position:absolute; inset:0; z-index:2;}
+.viewfinder canvas{position:absolute; inset:0; width:100%; height:100%;}
+#overlayCanvas{z-index: 3; pointer-events:none;}
+#freezeCanvas{display:none;}
+#previewCanvas{z-index: 4;}
+
+.viewfinder .hint{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:24px; font-size:12px; color:#ffffff; line-height:1.6; background:#000000; z-index: 10;}
+
+.mini-hint{font-size:10.5px; color:var(--text-dim); margin:10px 0 0; line-height:1.6;}
+.mask-controls{margin-top:14px; display:none;}
+.mask-controls.show{display:block;}
+.mask-label{display:flex; justify-content:space-between; font-size:10.5px; font-weight:bold; color:var(--text); margin-bottom:6px;}
+.mask-label span{color:var(--text);}
+.node-instructions{font-size:10px; color:var(--text); margin-top:6px; line-height:1.4;}
+
+.controls{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:14px; flex-wrap:wrap;}
+.btn{font-family: var(--font-ui); font-size:12px; font-weight:bold; letter-spacing:0.06em; text-transform:uppercase; background:var(--bg); color:var(--text); border:1px solid var(--line); padding:11px 18px; cursor:pointer; transition:all 0.15s ease;}
+.btn:hover{background:var(--text); color:var(--bg);}
+.btn.primary{background:var(--text); border-color:var(--line); color:var(--bg);}
+.btn:disabled{opacity:0.4; cursor:not-allowed;}
+.status{font-size:11px; color:var(--text);}
+
+.result{margin-top:22px; border-top:1px solid var(--line); padding-top:18px; display:none;}
+.result.show{display:block;}
+.result-head{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px;}
+.result-head .label{font-size:11px; font-weight:bold; text-transform:uppercase; color:var(--text);}
+.chips{display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); border:1px solid var(--line);}
+.chip{min-width:0; cursor:pointer; border:none; border-right:1px solid var(--line); border-bottom:1px solid var(--line); padding:0; background:none; display:flex; flex-direction:column;}
+.chip:nth-child(4n){border-right:none;}
+.chip:nth-child(n+5){border-bottom:none;}
+.chip .swatch{height:64px;}
+.chip .meta{padding:8px 6px; background:var(--panel-2); font-size:10.5px; color:var(--text); text-align:center; border-top:1px dashed var(--line-soft);}
+.chip .meta .pct{color:var(--text-dim); display:block; margin-top:2px;}
+
+.next-row{margin-top:16px; display:flex; justify-content:flex-end; gap:10px;}
+
+/* Formulario de registro inicial */
+.register-form{display:flex; flex-direction:column; gap:14px;}
+.form-group{display:flex; flex-direction:column; gap:4px;}
+.form-group label{font-size:11px; color:var(--text); font-weight:bold; text-transform:uppercase; letter-spacing:0.06em;}
+.form-input{background:var(--bg); border:1px solid var(--line); color:var(--text); padding:10px; font-family: var(--font-ui); font-size:13px;}
+.form-input:focus{outline:none; border-color:var(--line);}
+.form-row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+
+/* Tarjeta de Grabación de Audio */
+.audio-card{display:flex; flex-direction:column; gap:14px; text-align:center; padding:12px 0;}
+.audio-timer{font-size:28px; font-family:var(--font-data); font-weight:bold; color:var(--text); margin:10px 0;}
+.audio-visualizer{height:48px; border:1px solid var(--line); background:#000000; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;}
+.audio-visualizer canvas{width:100%; height:100%; display:block;}
+
+/* Pasaporte / Informe Final */
+.passport{width:100%; max-width:640px; background:var(--panel); border:2px solid var(--line); padding:24px; position:relative; margin:0 auto;}
+.passport::before{content:''; position:absolute; inset:6px; border:1px dashed var(--line-soft); pointer-events:none;}
+.pass-header{display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid var(--line); padding-bottom:14px; margin-bottom:16px; gap:16px;}
+.pass-header-id{font-size:18px; font-weight:bold; color:var(--text); font-family: var(--font-data); margin:0; text-transform:uppercase; letter-spacing:0.05em;}
+.pass-divider{height:2px; background:var(--line); margin:0 0 16px 0;}
+.pass-data-section{display:flex; flex-direction:column; gap:8px; margin-bottom:16px;}
+.pass-data-item{display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px dashed var(--line-soft); padding-bottom:4px;}
+.pass-data-label{color:var(--text); font-size:10px; font-weight:bold; text-transform:uppercase;}
+.pass-data-value{font-weight:bold; color:var(--text); font-family: var(--font-data); font-size:12px; text-align:right;}
+
+.palette-preview{display:flex; height:24px; border:1px solid var(--line); margin-top:4px; margin-bottom:12px;}
+.palette-chip{flex:1; height:100%;}
+
+.dna-container-wrapper{display:flex; align-items:center; gap:8px; margin-top:4px; margin-bottom:16px;}
+.dna-play-btn{
+  background: var(--text); color: var(--bg); border: 1px solid var(--line);
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 14px; flex-shrink: 0; transition: opacity 0.15s;
+}
+.dna-play-btn:hover{ opacity: 0.8; }
+.dna-strip{flex:1; height:32px; border:1px solid var(--line); overflow:hidden; background:#ffffff;}
+.dna-strip canvas{width:100%; height:100%; display:block;}
+
+#mapContainer{margin-top:16px; border:1px solid var(--line); background:var(--bg); padding:4px;}
+#map{height:260px; width:100%; background:#eaeaea;}
+.dna-strip{cursor:pointer; touch-action:manipulation; position:relative;}
+.dna-strip:focus{outline:2px solid var(--line); outline-offset:2px;}
+.dna-note-status{
+  font-size:10px;
+  color:var(--text-dim);
+  text-align:center;
+  margin:-10px 0 14px;
+  font-family:var(--font-data);
+}
+</style>
+</head>
+<body>
+
+<div class="sheet">
+  <div class="masthead">
+    <div></div>
+    <button class="btn" id="cameraAdminBtn" type="button" style="padding:8px 12px; font-size:10.5px;">⚙ Configurar cámaras</button>
+  </div>
+
+  <div class="stepper" id="stepperNav">
+    <div class="step-pill active" id="pill0"><span class="n">00</span>Registro</div>
+    <div class="step-pill" id="pill1"><span class="n">01</span>Audio</div>
+    <div class="step-pill" id="pill2"><span class="n">02</span>Rostro</div>
+    <div class="step-pill" id="pill3"><span class="n">03</span>Semilla</div>
+    <div class="step-pill" id="pill4"><span class="n">04</span>Pasaporte</div>
+  </div>
+
+  <!-- Panel de administración: qué cámara usa cada paso, guardado por equipo -->
+  <div class="card" id="cameraAdminCard" style="display:none;">
+    <div class="register-form">
+      <div class="form-group">
+        <label>Configuración de cámaras de este equipo</label>
+        <p class="mini-hint">Cada computador puede tener cámaras distintas y en distinto orden. Esta elección se guarda solo en este navegador/equipo — no viaja al servidor ni afecta a otros computadores.</p>
+      </div>
+
+      <button class="btn" id="adminDetectBtn" type="button">Detectar cámaras conectadas</button>
+      <p class="mini-hint" id="adminStatus">Pulsa "Detectar cámaras" y concede el permiso cuando el navegador lo pida.</p>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="adminFaceSelect">Cámara para el rostro del guardián</label>
+          <select id="adminFaceSelect" class="form-input"></select>
+          <button class="btn" id="adminPreviewFaceBtn" type="button" style="margin-top:6px;">Probar esta cámara</button>
+        </div>
+        <div class="form-group">
+          <label for="adminSeedSelect">Cámara para la semilla</label>
+          <select id="adminSeedSelect" class="form-input"></select>
+          <button class="btn" id="adminPreviewSeedBtn" type="button" style="margin-top:6px;">Probar esta cámara</button>
+        </div>
+      </div>
+
+      <div class="viewfinder" style="aspect-ratio:4/3; max-height:280px;">
+        <video id="adminPreviewVideo" autoplay playsinline muted style="display:none;"></video>
+      </div>
+    </div>
+    <div class="next-row">
+      <button class="btn" id="adminCloseBtn" type="button">Cerrar sin guardar</button>
+      <button class="btn primary" id="adminSaveBtn" type="button">Guardar configuración de este equipo</button>
+    </div>
+  </div>
+
+  <!-- Tarjeta de Registro Inicial -->
+  <div class="card" id="registerCard">
+    <div class="mask-controls show" style="margin-bottom:16px; padding-bottom:14px; border-bottom:1px solid var(--line);">
+      <label class="mask-label" for="saveFolderStatus">Guardado en servidor <span id="saveFolderStatus">verificando conexión con el servidor…</span></label>
+      <p class="mini-hint" id="saveFolderHint">Al finalizar, la ficha en PDF y los audios se envían y guardan directamente en la carpeta "guardados/" del servidor (organizados por guardián), sin diálogos de descarga.</p>
+    </div>
+    <div class="register-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="guardianName">Nombre del guardián</label>
+          <input type="text" id="guardianName" class="form-input" value="María Elena Ortiz">
+        </div>
+        <div class="form-group">
+          <label for="guardianOrigin">Origen del guardián</label>
+          <input type="text" id="guardianOrigin" class="form-input" value="Pasto, Colombia">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="guardianWeight">Peso del guardián (kg)</label>
+          <input type="number" id="guardianWeight" class="form-input" value="65" step="0.1">
+        </div>
+        <div class="form-group">
+          <label for="seedWeight">Peso de 1 semilla (g)</label>
+          <input type="number" id="seedWeight" class="form-input" value="0.35" step="0.001">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="seedName">Nombre de la semilla</label>
+          <input type="text" id="seedName" class="form-input" value="Maíz amarillo nativo">
+        </div>
+        <div class="form-group">
+          <label for="seedOrigin">Origen de la semilla</label>
+          <input type="text" id="seedOrigin" class="form-input" value="Mocoa, Colombia">
+        </div>
+      </div>
+    </div>
+    <div class="next-row">
+      <button class="btn primary" id="startAudioStepBtn" type="button">Continuar a grabación de audio →</button>
+    </div>
+  </div>
+
+  <!-- Tarjeta de Grabación de Audio (60 segundos) -->
+  <div class="card" id="audioCard" style="display:none;">
+    <div class="audio-card">
+      <h3 style="margin:0; font-size:14px; text-transform:uppercase;">Testimonio oral del guardián</h3>
+      <p style="font-size:11px; color:var(--text-dim); margin:0;">Graba un audio de hasta 60 segundos contando una historia sobre la semilla elegida.</p>
+      <div class="audio-timer" id="audioTimer">01:00</div>
+      <div class="audio-visualizer">
+        <canvas id="audioCanvas" width="580" height="48"></canvas>
+      </div>
+      <div class="controls" style="justify-content:center; margin-top:10px;">
+        <button class="btn primary" id="recordAudioBtn" type="button">Iniciar grabación (60s)</button>
+        <button class="btn" id="skipAudioBtn" type="button" style="display:none;">Omitir / Continuar</button>
+      </div>
+      <span class="status" id="audioStatusText" style="text-align:center;">Listo para grabar el testimonio oral</span>
+    </div>
+  </div>
+
+  <!-- Tarjeta de Captura (Reutilizable) -->
+  <div class="card" id="captureCard" style="display:none;">
+    <div class="mask-controls" id="cameraSelectWrap" style="display:none; margin-bottom:10px;">
+      <label class="mask-label" for="cameraSelect">Cámara en uso</label>
+      <select id="cameraSelect" class="form-input" style="width:100%;"></select>
+    </div>
+    <div class="viewfinder" id="viewfinder">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="freezeCanvas" style="display:none;"></canvas>
+      <canvas id="overlayCanvas"></canvas>
+      <canvas id="previewCanvas" style="display:none;"></canvas>
+      <div class="hint" id="hint">Iniciando sistema…</div>
+    </div>
+    <p class="mini-hint" id="instructionHint">Centra tu rostro en la plantilla fija.</p>
+    <div class="controls">
+      <button class="btn primary" id="captureBtn" disabled>Capturar imagen</button>
+      <button class="btn" id="retryBtn" style="display:none;">Repetir captura</button>
+      <span class="status" id="statusText"></span>
+    </div>
+
+    <div class="mask-controls" id="maskControls">
+      <label class="mask-label">Editor vectorial de nodos <span id="nodeStatus">Activo (arrastra los puntos)</span></label>
+      <div class="node-instructions">💡 Haz clic y arrastra cualquiera de los 12 nodos sobre la imagen para refinar el contorno con precisión.</div>
+    </div>
+
+    <div class="result" id="result">
+      <div class="result-head">
+        <span class="label" id="resultLabel">Paleta cromática · 8 colores</span>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="next-row">
+        <button class="btn primary" id="nextBtn">Continuar → siguiente paso</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pasaporte Final con Datos, Paletas, ADN y Reproducción de Audio en la Caja Musical -->
+  <div id="passportContainer" style="display:none; justify-content:center; width:100%;">
+    <div class="passport">
+        <div class="pass-header">
+            <div>
+                <div class="pass-header-id" id="passId">--</div>
+            </div>
+            <button class="btn" id="restartBtn" style="padding:6px 10px; font-size:10px;" type="button">Nuevo</button>
+        </div>
+        
+        <div class="pass-data-section">
+            <div class="pass-data-item">
+                <span class="pass-data-label">Guardián / Peso:</span>
+                <span class="pass-data-value"><span id="valGuardian">--</span> (<span id="valGuardianWeight">--</span> kg)</span>
+            </div>
+            <div class="pass-data-item">
+                <span class="pass-data-label">Origen del guardián:</span>
+                <span class="pass-data-value" id="valGuardianOrigin">--</span>
+            </div>
+            <div class="pass-data-item">
+                <span class="pass-data-label">Variedad de semilla / Peso unitario:</span>
+                <span class="pass-data-value"><span id="valSeed">--</span> (<span id="valSeedWeight">--</span> g)</span>
+            </div>
+            <div class="pass-data-item">
+                <span class="pass-data-label">Origen de la semilla:</span>
+                <span class="pass-data-value" id="valSeedOrigin">--</span>
+            </div>
+            <div class="pass-data-item" style="background:#e2e2e2; padding:4px;">
+                <span class="pass-data-label" style="font-weight:bold;">Semillas equivalentes al peso corporal:</span>
+                <span class="pass-data-value" id="valSeedCountRatio" style="font-size:13px; color:#000;">--</span>
+            </div>
+            <div class="pass-data-item">
+                <span class="pass-data-label">Relación de aspecto (W/H):</span>
+                <span class="pass-data-value" id="passAspect">--</span>
+            </div>
+            <div class="pass-data-item">
+                <span class="pass-data-label">Clasificación de forma:</span>
+                <span class="pass-data-value" id="passShape">--</span>
+            </div>
+            <div class="pass-data-item">
+                <span class="pass-data-label">Índice de compacidad:</span>
+                <span class="pass-data-value" id="passCircularity">--</span>
+            </div>
+            <div class="pass-data-item">
+                <span class="pass-data-label">Simbiosis cromática:</span>
+                <span class="pass-data-value" id="passSymbiosis">--</span>
+            </div>
+        </div>
+
+        <div style="font-size:10px; font-weight:bold; text-transform:uppercase; margin-bottom:2px;">Paleta cromática del guardián</div>
+        <div class="palette-preview" id="guardianPalettePreview"></div>
+
+        <div style="font-size:10px; font-weight:bold; text-transform:uppercase; margin-bottom:2px;">Paleta cromática de la semilla</div>
+        <div class="palette-preview" id="seedPalettePreview"></div>
+
+        <div style="font-size:10px; font-weight:bold; text-transform:uppercase; margin-bottom:2px;">ADN cromático unificado</div>
+        <div class="dna-container-wrapper">
+          <button class="dna-play-btn" id="dnaPlayBtn" title="Reproducir caja musical y voz" type="button">▶</button>
+          <div class="dna-strip" id="dnaInteractive"><canvas id="dnaCanvas" width="540" height="32"></canvas></div>
+        </div>
+        <div class="dna-note-status" id="dnaMeterStatus">Caja musical + Testimonio oral superpuesto · Volumen Caja: 0.50 · Volumen Guardián: 0.55 (+1 pt)</div>
+        <div class="dna-note-status" id="dnaNoteStatus">Haz clic en el botón de reproducción o sobre el ADN para escuchar la caja musical y la historia del guardián.</div>
+
+        <div id="mapContainer">
+            <div style="font-size:10px; font-weight:bold; text-transform:uppercase; margin-bottom:4px; padding:4px;">Trayecto geográfico del intercambio</div>
+            <div id="map"></div>
+        </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const video = document.getElementById('video');
+  const overlayCanvas = document.getElementById('overlayCanvas');
+  const ctx = overlayCanvas.getContext('2d');
+  const captureBtn = document.getElementById('captureBtn');
+  const retryBtn = document.getElementById('retryBtn');
+  const hint = document.getElementById('hint');
+  const statusText = document.getElementById('statusText');
+  const freezeCanvas = document.getElementById('freezeCanvas');
+  const previewCanvas = document.getElementById('previewCanvas');
+  const maskControls = document.getElementById('maskControls');
+  const result = document.getElementById('result');
+  const resultLabel = document.getElementById('resultLabel');
+  const chipsEl = document.getElementById('chips');
+  const nextBtn = document.getElementById('nextBtn');
+  const registerCard = document.getElementById('registerCard');
+  const audioCard = document.getElementById('audioCard');
+  const captureCard = document.getElementById('captureCard');
+  const passportContainer = document.getElementById('passportContainer');
+  const restartBtn = document.getElementById('restartBtn');
+  const startAudioStepBtn = document.getElementById('startAudioStepBtn');
+  const instructionHint = document.getElementById('instructionHint');
+  const cameraSelectWrap = document.getElementById('cameraSelectWrap');
+  const cameraSelect = document.getElementById('cameraSelect');
+  const pills = [
+    document.getElementById('pill0'), 
+    document.getElementById('pill1'), 
+    document.getElementById('pill2'), 
+    document.getElementById('pill3'), 
+    document.getElementById('pill4')
+  ];
+
+  // Elementos de audio
+  const recordAudioBtn = document.getElementById('recordAudioBtn');
+  const skipAudioBtn = document.getElementById('skipAudioBtn');
+  const audioTimer = document.getElementById('audioTimer');
+  const audioStatusText = document.getElementById('audioStatusText');
+  const audioCanvas = document.getElementById('audioCanvas');
+  const aCtxVis = audioCanvas.getContext('2d');
+
+  let stream = null;
+  let animationFrameId = null;
+  let livePreviewActive = false;
+  let currentRawCanvas = null;
+  let currentThumb = null;
+  let currentK = 8;
+  let activeNodes = [];
+  let liveRayPoints = [];
+  let draggingNodeIndex = null;
+  let debounceTimer = null;
+  let step = 0;
+  let guardian = null;
+  let seed = null;
+  let availableCameras = [];
+  let selectedDeviceIdByStep = {};
+
+  // ---------- configuración de cámaras por equipo (persistida en este navegador) ----------
+  let cameraConfig = { face: null, seed: null };
+  function loadCameraConfig(){
+    try{
+      const raw = localStorage.getItem('guardianCameraConfig');
+      if(raw) cameraConfig = JSON.parse(raw) || { face: null, seed: null };
+    }catch(e){ cameraConfig = { face: null, seed: null }; }
+  }
+  function saveCameraConfigToStorage(){
+    try{ localStorage.setItem('guardianCameraConfig', JSON.stringify(cameraConfig)); }catch(e){}
+  }
+  loadCameraConfig();
+
+  const cameraAdminBtn = document.getElementById('cameraAdminBtn');
+  const cameraAdminCard = document.getElementById('cameraAdminCard');
+  const adminDetectBtn = document.getElementById('adminDetectBtn');
+  const adminFaceSelect = document.getElementById('adminFaceSelect');
+  const adminSeedSelect = document.getElementById('adminSeedSelect');
+  const adminPreviewVideo = document.getElementById('adminPreviewVideo');
+  const adminPreviewFaceBtn = document.getElementById('adminPreviewFaceBtn');
+  const adminPreviewSeedBtn = document.getElementById('adminPreviewSeedBtn');
+  const adminSaveBtn = document.getElementById('adminSaveBtn');
+  const adminCloseBtn = document.getElementById('adminCloseBtn');
+  const adminStatus = document.getElementById('adminStatus');
+  let adminPreviewStream = null;
+
+  function stopAdminPreview(){
+    if(adminPreviewStream){ adminPreviewStream.getTracks().forEach(t => t.stop()); adminPreviewStream = null; }
+    if(adminPreviewVideo){ adminPreviewVideo.style.display = 'none'; adminPreviewVideo.srcObject = null; }
+  }
+
+  function fillAdminSelect(select, cams, savedId){
+    select.innerHTML = '';
+    cams.forEach((d, i) => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || ('Cámara ' + (i + 1));
+      select.appendChild(opt);
+    });
+    if(savedId && cams.some(d => d.deviceId === savedId)) select.value = savedId;
+  }
+
+  async function adminDetectCameras(){
+    if(!adminStatus) return;
+    adminStatus.textContent = 'Detectando cámaras…';
+    try{
+      const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      tmp.getTracks().forEach(t => t.stop());
+    }catch(e){
+      adminStatus.textContent = 'No se concedió permiso de cámara — no se pueden listar los dispositivos.';
+      return;
+    }
+    let cams = [];
+    try{
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      cams = devices.filter(d => d.kind === 'videoinput');
+      availableCameras = cams;
+    }catch(e){
+      adminStatus.textContent = 'No se pudo obtener la lista de cámaras.';
+      return;
+    }
+    fillAdminSelect(adminFaceSelect, cams, cameraConfig.face && cameraConfig.face.deviceId);
+    fillAdminSelect(adminSeedSelect, cams, cameraConfig.seed && cameraConfig.seed.deviceId);
+    adminStatus.textContent = cams.length + ' cámara(s) detectada(s) en este equipo.';
+  }
+
+  async function adminPreviewDevice(deviceId){
+    stopAdminPreview();
+    if(!deviceId || !adminPreviewVideo) return;
+    try{
+      adminPreviewStream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } }, audio: false });
+      adminPreviewVideo.srcObject = adminPreviewStream;
+      adminPreviewVideo.style.display = 'block';
+      await adminPreviewVideo.play().catch(() => {});
+    }catch(e){
+      if(adminStatus) adminStatus.textContent = 'No se pudo abrir la vista previa de esa cámara.';
+    }
+  }
+
+  function openCameraAdmin(){
+    if(!cameraAdminCard) return;
+    registerCard.style.display = 'none';
+    cameraAdminCard.style.display = 'block';
+    adminDetectCameras();
+  }
+
+  function closeCameraAdmin(){
+    stopAdminPreview();
+    if(cameraAdminCard) cameraAdminCard.style.display = 'none';
+    registerCard.style.display = 'block';
+  }
+
+  if(cameraAdminBtn) cameraAdminBtn.addEventListener('click', openCameraAdmin);
+  if(adminDetectBtn) adminDetectBtn.addEventListener('click', adminDetectCameras);
+  if(adminPreviewFaceBtn) adminPreviewFaceBtn.addEventListener('click', () => adminPreviewDevice(adminFaceSelect.value));
+  if(adminPreviewSeedBtn) adminPreviewSeedBtn.addEventListener('click', () => adminPreviewDevice(adminSeedSelect.value));
+  if(adminCloseBtn) adminCloseBtn.addEventListener('click', closeCameraAdmin);
+  if(adminSaveBtn) adminSaveBtn.addEventListener('click', () => {
+    const faceOpt = adminFaceSelect.options[adminFaceSelect.selectedIndex];
+    const seedOpt = adminSeedSelect.options[adminSeedSelect.selectedIndex];
+    if(!faceOpt || !seedOpt){
+      if(adminStatus) adminStatus.textContent = 'Detecta las cámaras antes de guardar.';
+      return;
+    }
+    cameraConfig.face = { deviceId: faceOpt.value, label: faceOpt.textContent };
+    cameraConfig.seed = { deviceId: seedOpt.value, label: seedOpt.textContent };
+    saveCameraConfigToStorage();
+    // limpia cualquier selección manual de la sesión para que se use la nueva configuración guardada
+    selectedDeviceIdByStep = {};
+    if(adminStatus) adminStatus.textContent = `Guardado en este equipo — rostro: "${cameraConfig.face.label}", semilla: "${cameraConfig.seed.label}".`;
+    stopAdminPreview();
+  });
+
+  // ---------- guardado directo en el servidor local (PHP) ----------
+  const saveFolderStatus = document.getElementById('saveFolderStatus');
+  const saveFolderHint = document.getElementById('saveFolderHint');
+  const SAVE_ENDPOINT = 'guardar.php';
+
+  function updateSaveFolderStatus(ok){
+    if(!saveFolderStatus) return;
+    if(ok === true){
+      saveFolderStatus.textContent = 'conectado — se guarda en el servidor';
+    }else if(ok === false){
+      saveFolderStatus.textContent = 'sin conexión al servidor — revisa que esté corriendo PHP';
+      if(saveFolderHint) saveFolderHint.textContent = 'No se pudo contactar guardar.php. Verifica que abriste esta página con un servidor PHP (no como archivo local) y que guardar.php está en la misma carpeta.';
+    }else{
+      saveFolderStatus.textContent = 'verificando conexión con el servidor…';
+    }
+  }
+
+  async function checkSaveServer(){
+    try{
+      const res = await fetch(SAVE_ENDPOINT, { method: 'GET' });
+      updateSaveFolderStatus(res.ok);
+    }catch(e){
+      updateSaveFolderStatus(false);
+    }
+  }
+  checkSaveServer();
+
+  async function saveBlobToServer(blob, filename){
+    try{
+      const fd = new FormData();
+      fd.append('archivo', blob, filename);
+      fd.append('nombre', filename);
+      fd.append('guardian', slugify(formData.guardianName));
+      const res = await fetch(SAVE_ENDPOINT, { method: 'POST', body: fd });
+      const data = await res.json().catch(() => null);
+      if(data && data.ok) return true;
+      return false;
+    }catch(e){
+      return false;
+    }
+  }
+
+  let mapInstance = null;
+
+  // Grabación de voz
+  let mediaRecorder = null;
+  let recordedAudioChunks = [];
+  let recordedAudioBlob = null;
+  let recordedAudioUrl = null;
+  let audioRecordingTimer = null;
+  let audioSecondsLeft = 60;
+  let audioStream = null;
+
+  let formData = {
+    guardianName: '',
+    guardianOrigin: '',
+    guardianWeight: 65,
+    seedName: '',
+    seedOrigin: '',
+    seedWeight: 0.35
+  };
+
+  const STEP_CONFIG = {
+    2:{ label:'Paleta del guardián · 8 colores', hint:'Centra tu rostro en la plantilla fija.' },
+    3:{ label:'Paleta de la semilla · 8 colores', hint:'Enfoca la semilla; el contorno vivo lanzará rayos radiales.' }
+  };
+
+  startAudioStepBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    formData.guardianName = document.getElementById('guardianName').value.trim() || 'Guardián';
+    formData.guardianOrigin = document.getElementById('guardianOrigin').value.trim() || 'Pasto, Colombia';
+    formData.guardianWeight = parseFloat(document.getElementById('guardianWeight').value) || 65;
+    formData.seedName = document.getElementById('seedName').value.trim() || 'Maíz amarillo nativo';
+    formData.seedOrigin = document.getElementById('seedOrigin').value.trim() || 'Mocoa, Colombia';
+    formData.seedWeight = parseFloat(document.getElementById('seedWeight').value) || 0.35;
+
+    registerCard.style.display = 'none';
+    audioCard.style.display = 'block';
+    pills[0].classList.remove('active'); pills[0].classList.add('done');
+    pills[1].classList.add('active');
+    step = 1;
+    initAudioRecorderPreview();
+  });
+
+  async function initAudioRecorderPreview(){
+    try {
+      audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStatusText.textContent = 'Micrófono listo. Pulsa iniciar para grabar (60s).';
+    } catch(err){
+      audioStatusText.textContent = 'Micrófono no disponible o denegado. Puedes omitir este paso.';
+      skipAudioBtn.style.display = 'inline-block';
+    }
+  }
+
+  recordAudioBtn.addEventListener('click', async () => {
+    if(!audioStream){
+      try {
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch(e){
+        proceedToFaceCapture();
+        return;
+      }
+    }
+
+    recordedAudioChunks = [];
+    try {
+      mediaRecorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' });
+    } catch(e) {
+      try {
+        mediaRecorder = new MediaRecorder(audioStream);
+      } catch(err2) {
+        proceedToFaceCapture();
+        return;
+      }
+    }
+
+    mediaRecorder.ondataavailable = (event) => {
+      if(event.data.size > 0) recordedAudioChunks.push(event.data);
+    };
+
+    mediaRecorder.onstop = () => {
+      recordedAudioBlob = new Blob(recordedAudioChunks, { type: 'audio/webm' });
+      recordedAudioUrl = URL.createObjectURL(recordedAudioBlob);
+      proceedToFaceCapture();
+    };
+
+    mediaRecorder.start();
+    recordAudioBtn.disabled = true;
+    skipAudioBtn.style.display = 'inline-block';
+    audioSecondsLeft = 60;
+    audioTimer.textContent = '01:00';
+    audioStatusText.textContent = 'Grabando historia con la semilla… (máx 60s)';
+
+    drawAudioVisualizerActive();
+
+    audioRecordingTimer = setInterval(() => {
+      audioSecondsLeft--;
+      let mins = String(Math.floor(audioSecondsLeft / 60)).padStart(2, '0');
+      let secs = String(audioSecondsLeft % 60).padStart(2, '0');
+      audioTimer.textContent = `${mins}:${secs}`;
+
+      if(audioSecondsLeft <= 0){
+        stopAudioRecording();
+      }
+    }, 1000);
+  });
+
+  skipAudioBtn.addEventListener('click', () => {
+    stopAudioRecording();
+  });
+
+  function stopAudioRecording(){
+    if(audioRecordingTimer) clearInterval(audioRecordingTimer);
+    if(mediaRecorder && mediaRecorder.state === 'recording'){
+      mediaRecorder.stop();
+    } else {
+      proceedToFaceCapture();
+    }
+    if(audioStream){
+      audioStream.getTracks().forEach(t => t.stop());
+    }
+  }
+
+  function drawAudioVisualizerActive(){
+    if(!audioCard.style.display || audioCard.style.display === 'none') return;
+    aCtxVis.fillStyle = '#000000';
+    aCtxVis.fillRect(0, 0, audioCanvas.width, audioCanvas.height);
+    aCtxVis.strokeStyle = '#ffffff';
+    aCtxVis.lineWidth = 2;
+    aCtxVis.beginPath();
+    for(let x = 0; x < audioCanvas.width; x += 4){
+      const y = audioCanvas.height / 2 + Math.sin(x * 0.1 + Date.now() * 0.01) * (Math.random() * 15);
+      if(x === 0) aCtxVis.moveTo(x, y); else aCtxVis.lineTo(x, y);
+    }
+    aCtxVis.stroke();
+    if(audioCard.style.display !== 'none') requestAnimationFrame(drawAudioVisualizerActive);
+  }
+
+  function proceedToFaceCapture(){
+    audioCard.style.display = 'none';
+    captureCard.style.display = 'block';
+    pills[1].classList.remove('active'); pills[1].classList.add('done');
+    pills[2].classList.add('active');
+    step = 2;
+    instructionHint.textContent = STEP_CONFIG[2].hint;
+    resultLabel.textContent = STEP_CONFIG[2].label;
+    startCameraForStep(2);
+  }
+
+  async function refreshDeviceList(){
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    availableCameras = devices.filter(d => d.kind === 'videoinput');
+    const prevValue = cameraSelect.value;
+    cameraSelect.innerHTML = '';
+    availableCameras.forEach((d, i) => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || ('Cámara ' + (i+1));
+      cameraSelect.appendChild(opt);
+    });
+    if(prevValue && [...cameraSelect.options].some(o => o.value === prevValue)){
+      cameraSelect.value = prevValue;
+    }
+  }
+
+  function guessDeviceForStep(stepNum){
+    if(availableCameras.length <= 1) return null;
+    const lower = s => (s || '').toLowerCase();
+    if(stepNum === 2){
+      const front = availableCameras.find(d => /front|integrat|facetime|interna|user/.test(lower(d.label)));
+      return front ? front.deviceId : null;
+    }
+    const external = availableCameras.find(d => /back|rear|environment|usb|extern|webcam|logi|hd pro|c920|c922|c930/.test(lower(d.label)));
+    if(external) return external.deviceId;
+    const guardianId = selectedDeviceIdByStep[2];
+    const notGuardian = availableCameras.find(d => d.deviceId !== guardianId);
+    return notGuardian ? notGuardian.deviceId : null;
+  }
+
+  function startCameraForStep(stepNum){
+    const facing = stepNum === 2 ? 'user' : 'environment';
+    const configuredId = stepNum === 2
+      ? (cameraConfig.face && cameraConfig.face.deviceId)
+      : (cameraConfig.seed && cameraConfig.seed.deviceId);
+    const deviceId = selectedDeviceIdByStep[stepNum] || configuredId || guessDeviceForStep(stepNum);
+    startCamera(facing, deviceId);
+  }
+
+  cameraSelect.addEventListener('change', () => {
+    const deviceId = cameraSelect.value;
+    if(!deviceId) return;
+    selectedDeviceIdByStep[step] = deviceId;
+    startCamera(step === 2 ? 'user' : 'environment', deviceId);
+  });
+
+  async function startCamera(facing, deviceId){
+    if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+    hint.style.display = 'flex';
+    hint.textContent = 'Solicitando acceso a la cámara…';
+
+    video.style.display = 'block';
+    previewCanvas.style.display = 'none';
+    overlayCanvas.style.display = 'block';
+
+    const baseConstraints = { width: { ideal: 1280 }, height: { ideal: 960 } };
+    const videoConstraints = deviceId
+      ? Object.assign({ deviceId: { exact: deviceId } }, baseConstraints)
+      : Object.assign({ facingMode: { ideal: facing === 'environment' ? 'environment' : 'user' } }, baseConstraints);
+
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+    }catch(err){
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }catch(err2){
+        hint.textContent = 'Error: Permiso de cámara denegado o no disponible.';
+        return;
+      }
+    }
+
+    video.srcObject = stream;
+    video.onloadedmetadata = () => {
+      video.play().then(() => {
+        hint.style.display = 'none';
+        captureBtn.disabled = false;
+        livePreviewActive = true;
+        if(step === 2) renderFixedTemplateLoop();
+        else renderIrregularSeedContourLoop();
+      }).catch(() => {
+        hint.style.display = 'none';
+        captureBtn.disabled = false;
+        livePreviewActive = true;
+        if(step === 2) renderFixedTemplateLoop();
+        else renderIrregularSeedContourLoop();
+      });
+    };
+
+    refreshDeviceList().then(() => {
+      const track = stream.getVideoTracks()[0];
+      const settings = track && track.getSettings ? track.getSettings() : {};
+      const activeId = settings.deviceId || deviceId || '';
+      if(activeId) selectedDeviceIdByStep[step] = activeId;
+      if(activeId && [...cameraSelect.options].some(o => o.value === activeId)){
+        cameraSelect.value = activeId;
+      }
+      cameraSelectWrap.style.display = availableCameras.length > 1 ? 'block' : 'none';
+    }).catch(() => {});
+  }
+
+  function renderFixedTemplateLoop(){
+    if(!livePreviewActive || video.paused || video.ended) return;
+    const w = video.videoWidth || 640, h = video.videoHeight || 480;
+    if(overlayCanvas.width !== w) overlayCanvas.width = w;
+    if(overlayCanvas.height !== h) overlayCanvas.height = h;
+
+    const fixedCx = w / 2, fixedCy = h / 2, fixedRx = w * 0.20, fixedRy = h * 0.38;
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.ellipse(fixedCx, fixedCy, fixedRx, fixedRy, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+    statusText.textContent = '✓ Plantilla activa. Encaja tu rostro y presiona capturar';
+    if(livePreviewActive) animationFrameId = requestAnimationFrame(renderFixedTemplateLoop);
+  }
+
+  function renderIrregularSeedContourLoop(){
+    if(!livePreviewActive || video.paused || video.ended) return;
+    const w = video.videoWidth || 640, h = video.videoHeight || 480;
+    if(overlayCanvas.width !== w) overlayCanvas.width = w;
+    if(overlayCanvas.height !== h) overlayCanvas.height = h;
+
+    const sW = 100, sH = 75;
+    const tCanvas = document.createElement('canvas'); tCanvas.width = sW; tCanvas.height = sH;
+    const tCtx = tCanvas.getContext('2d');
+    tCtx.drawImage(video, 0, 0, sW, sH);
+    const imgData = tCtx.getImageData(0, 0, sW, sH).data;
+
+    const centerX = sW / 2, centerY = sH / 2;
+    const baseIdx = (Math.floor(centerY) * sW + Math.floor(centerX)) * 4;
+    const refR = imgData[baseIdx], refG = imgData[baseIdx+1], refB = imgData[baseIdx+2];
+
+    const raysCount = 12;
+    const computedPoints = [];
+    liveRayPoints = [];
+    const scaleX = w / sW, scaleY = h / sH;
+
+    for(let i = 0; i < raysCount; i++){
+      const angle = (i / raysCount) * Math.PI * 2;
+      let targetDist = Math.min(sW, sH) * 0.25;
+      for(let d = 4; d < Math.min(sW, sH) * 0.45; d += 2){
+        const rx = Math.floor(centerX + Math.cos(angle) * d);
+        const ry = Math.floor(centerY + Math.sin(angle) * d);
+        if(rx < 0 || rx >= sW || ry < 0 || ry >= sH) break;
+        const idx = (ry * sW + rx) * 4;
+        const diff = Math.abs(imgData[idx] - refR) + Math.abs(imgData[idx+1] - refG) + Math.abs(imgData[idx+2] - refB);
+        if(diff > 30){ targetDist = d; break; }
+      }
+      const finalX = (centerX + Math.cos(angle) * targetDist) * scaleX;
+      const finalY = (centerY + Math.sin(angle) * targetDist) * scaleY;
+      computedPoints.push({ x: finalX, y: finalY });
+      liveRayPoints.push({ x: finalX / w, y: finalY / h });
+    }
+
+    statusText.textContent = '⚡ Contorno vivo de semilla activo';
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.strokeStyle = '#000000'; ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(computedPoints[0].x, computedPoints[0].y);
+    for(let i = 0; i < computedPoints.length; i++){
+      const p0 = computedPoints[i], p1 = computedPoints[(i + 1) % computedPoints.length];
+      ctx.quadraticCurveTo(p0.x, p0.y, (p0.x + p1.x) / 2, (p0.y + p1.y) / 2);
+    }
+    ctx.closePath(); ctx.stroke(); ctx.restore();
+
+    if(livePreviewActive) animationFrameId = requestAnimationFrame(renderIrregularSeedContourLoop);
+  }
+
+  captureBtn.addEventListener('click', () => {
+    livePreviewActive = false;
+    if(animationFrameId) cancelAnimationFrame(animationFrameId);
+    overlayCanvas.style.display = 'none';
+
+    const w = video.videoWidth, h = video.videoHeight;
+    if(!w || !h) return;
+    
+    freezeCanvas.width = w; freezeCanvas.height = h;
+    const fCtx = freezeCanvas.getContext('2d');
+    fCtx.drawImage(video, 0, 0, w, h);
+    const rawImageData = fCtx.getImageData(0, 0, w, h);
+
+    currentRawCanvas = document.createElement('canvas');
+    currentRawCanvas.width = w; currentRawCanvas.height = h;
+    currentRawCanvas.getContext('2d').putImageData(rawImageData, 0, 0);
+
+    const thumbCanvas = document.createElement('canvas');
+    thumbCanvas.width = 120; thumbCanvas.height = 120;
+    thumbCanvas.getContext('2d').drawImage(currentRawCanvas, 0, 0, 120, 120);
+    currentThumb = thumbCanvas.toDataURL('image/jpeg', 0.85);
+
+    previewCanvas.width = w; previewCanvas.height = h;
+    previewCanvas.style.display = 'block';
+    video.style.display = 'none';
+    captureBtn.style.display = 'none';
+    retryBtn.style.display = 'inline-block';
+    maskControls.classList.add('show');
+
+    activeNodes = [];
+    const count = 12;
+    if(step === 2){
+      const fixedCx = w / 2, fixedCy = h / 2, fixedRx = w * 0.20, fixedRy = h * 0.38;
+      for(let i = 0; i < count; i++){
+        const angle = (i / count) * Math.PI * 2;
+        activeNodes.push({ x: (fixedCx + Math.cos(angle) * fixedRx) / w, y: (fixedCy + Math.sin(angle) * fixedRy) / h });
+      }
+    } else {
+      activeNodes = liveRayPoints.length > 0 ? [...liveRayPoints] : [];
+      if(activeNodes.length === 0){
+        for(let i = 0; i < count; i++){
+          const angle = (i / count) * Math.PI * 2;
+          activeNodes.push({ x: 0.5 + Math.cos(angle) * 0.2, y: 0.5 + Math.sin(angle) * 0.2 });
+        }
+      }
+    }
+
+    statusText.textContent = 'Modela las curvas con los 12 nodos';
+    recomputeWithSplineNodes(rawImageData);
+  });
+
+  function recomputeWithSplineNodes(rawImageData){
+    if(!currentRawCanvas) return;
+    const w = currentRawCanvas.width, h = currentRawCanvas.height;
+    const alpha = new Uint8ClampedArray(w * h);
+    const scaledNodes = activeNodes.map(n => ({ x: n.x * w, y: n.y * h }));
+
+    let minX = w, maxX = 0, minY = h, maxY = 0;
+    for(let y = 0; y < h; y++){
+      for(let x = 0; x < w; x++){
+        const p = y * w + x;
+        if(isInsideSmoothSpline(x, y, scaledNodes)){
+          alpha[p] = 255;
+          if(x < minX) minX = x; if(x > maxX) maxX = x;
+          if(y < minY) minY = y; if(y > maxY) maxY = y;
+        } else { alpha[p] = 0; }
+      }
+    }
+
+    if(maxX < minX || maxY < minY){ minX = 0; minY = 0; maxX = w-1; maxY = h-1; }
+
+    const masked = applyAlphaToImageData(rawImageData, alpha);
+    const palette = extractPalette(masked, currentK);
+
+    const pctx = previewCanvas.getContext('2d');
+    pctx.clearRect(0, 0, w, h);
+    pctx.putImageData(masked, 0, 0);
+    drawSplineOverlay(pctx, scaledNodes);
+
+    renderChips(palette);
+    result.classList.add('show');
+    statusText.textContent = palette.length + ' colores detectados';
+
+    const record = { rawCanvas: currentRawCanvas, palette, bbox:{ x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 }, thumb: currentThumb, alphaMask: alpha, maskW: w, maskH: h };
+    if(step === 2) guardian = record; else seed = record;
+    nextBtn.textContent = step === 2 ? 'Continuar → semilla' : 'Generar Pasaporte';
+  }
+
+  function isInsideSmoothSpline(x, y, nodes){
+    let inside = false;
+    for(let i = 0, j = nodes.length - 1; i < nodes.length; j = i++){
+      const xi = nodes[i].x, yi = nodes[i].y, xj = nodes[j].x, yj = nodes[j].y;
+      const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi + 0.00001) + xi);
+      if(intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function drawSplineOverlay(ctx, scaledNodes){
+    ctx.save();
+    ctx.strokeStyle = '#000000'; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(scaledNodes[0].x, scaledNodes[0].y);
+    for(let i = 0; i < scaledNodes.length; i++){
+      const p0 = scaledNodes[i], p1 = scaledNodes[(i + 1) % scaledNodes.length];
+      ctx.quadraticCurveTo(p0.x, p0.y, (p0.x + p1.x) / 2, (p0.y + p1.y) / 2);
+    }
+    ctx.closePath(); ctx.stroke();
+
+    scaledNodes.forEach((node, idx) => {
+      ctx.fillStyle = draggingNodeIndex === idx ? '#000000' : '#ffffff';
+      ctx.strokeStyle = '#000000'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(node.x, node.y, 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  function getNodeCoordinates(e){
+    const rect = previewCanvas.getBoundingClientRect();
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+    if(clientX === undefined || clientY === undefined) return null;
+    return {
+      x: (clientX - rect.left) * (previewCanvas.width / rect.width),
+      y: (clientY - rect.top) * (previewCanvas.height / rect.height)
+    };
+  }
+
+  previewCanvas.addEventListener('mousedown', handlePointerDown);
+  previewCanvas.addEventListener('touchstart', handlePointerDown, {passive: false});
+  function handlePointerDown(e){
+    e.preventDefault();
+    const coords = getNodeCoordinates(e);
+    if(!coords) return;
+    activeNodes.forEach((n, idx) => {
+      if(Math.hypot(coords.x - n.x * previewCanvas.width, coords.y - n.y * previewCanvas.height) < 45) draggingNodeIndex = idx;
+    });
+  }
+
+  window.addEventListener('mousemove', handlePointerMove);
+  window.addEventListener('touchmove', handlePointerMove, {passive: false});
+  function handlePointerMove(e){
+    if(draggingNodeIndex === null || !currentRawCanvas) return;
+    e.preventDefault();
+    const coords = getNodeCoordinates(e);
+    if(!coords) return;
+    activeNodes[draggingNodeIndex].x = Math.max(0.02, Math.min(0.98, coords.x / previewCanvas.width));
+    activeNodes[draggingNodeIndex].y = Math.max(0.02, Math.min(0.98, coords.y / previewCanvas.height));
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      recomputeWithSplineNodes(currentRawCanvas.getContext('2d').getImageData(0, 0, currentRawCanvas.width, currentRawCanvas.height));
+    }, 10);
+  }
+
+  window.addEventListener('mouseup', handlePointerUp);
+  window.addEventListener('touchend', handlePointerUp);
+  function handlePointerUp(){ draggingNodeIndex = null; }
+
+  function extractPalette(imageData, k){
+    const data = imageData.data, pixels = [];
+    for(let i=0; i<data.length; i+=4*3){
+      if(data[i+3] < 128) continue;
+      pixels.push([data[i], data[i+1], data[i+2]]);
+    }
+    if(pixels.length === 0) return [];
+    let centroids = [];
+    for(let c=0; c<k; c++) centroids.push(pixels[Math.floor(pixels.length*(c+0.5)/k)].slice());
+    let assignments = new Array(pixels.length).fill(0);
+    for(let iter=0; iter<8; iter++){
+      for(let p=0; p<pixels.length; p++){
+        let best=0, bestDist=Infinity;
+        for(let c=0; c<k; c++){
+          const dr=pixels[p][0]-centroids[c][0], dg=pixels[p][1]-centroids[c][1], db=pixels[p][2]-centroids[c][2];
+          const d=dr*dr+dg*dg+db*db;
+          if(d<bestDist){bestDist=d; best=c;}
+        }
+        assignments[p]=best;
+      }
+      const sums = Array.from({length:k}, () => [0,0,0,0]);
+      for(let p=0; p<pixels.length; p++){
+        const c=assignments[p]; sums[c][0]+=pixels[p][0]; sums[c][1]+=pixels[p][1]; sums[c][2]+=pixels[p][2]; sums[c][3]+=1;
+      }
+      for(let c=0; c<k; c++) if(sums[c][3]>0) centroids[c]=[sums[c][0]/sums[c][3], sums[c][1]/sums[c][3], sums[c][2]/sums[c][3]];
+    }
+    const counts = new Array(k).fill(0);
+    assignments.forEach(a => counts[a]++);
+    const total = pixels.length;
+    let palette = centroids.map((c,i) => ({ rgb: c.map(v => Math.round(v)), pct: counts[i]/total }));
+    palette = palette.filter(p => p.pct > 0.005);
+    palette.sort((a,b) => b.pct - a.pct);
+    return palette;
+  }
+
+  function rgbToHex([r,g,b]){ return '#' + [r,g,b].map(v => Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('').toUpperCase(); }
+  function applyAlphaToImageData(rawImageData, alpha){
+    const out = new Uint8ClampedArray(rawImageData.data);
+    for(let p=0;p<alpha.length;p++) out[p*4+3]=alpha[p];
+    return new ImageData(out, rawImageData.width, rawImageData.height);
+  }
+
+  function renderChips(palette){
+    chipsEl.innerHTML = '';
+    palette.forEach(p => {
+      const hex = rgbToHex(p.rgb);
+      const chip = document.createElement('button');
+      chip.className = 'chip';
+      chip.innerHTML = `<span class="swatch" style="background:${hex}"></span><span class="meta">${hex}<span class="pct">${Math.round(p.pct*100)}%</span></span>`;
+      chip.addEventListener('click', () => {
+        navigator.clipboard.writeText(hex).catch(()=>{});
+        const meta = chip.querySelector('.meta'), original = meta.innerHTML;
+        meta.innerHTML = 'copiado'; setTimeout(() => { meta.innerHTML = original; }, 900);
+      });
+      chipsEl.appendChild(chip);
+    });
+  }
+
+  retryBtn.addEventListener('click', () => {
+    previewCanvas.style.display = 'none';
+    video.style.display = 'block';
+    overlayCanvas.style.display = 'block';
+    captureBtn.style.display = 'inline-block';
+    retryBtn.style.display = 'none';
+    maskControls.classList.remove('show');
+    result.classList.remove('show');
+    statusText.textContent = '';
+    currentRawCanvas = null; currentThumb = null;
+    livePreviewActive = true;
+    if(step === 2) renderFixedTemplateLoop(); else startCameraForStep(3);
+  });
+
+  nextBtn.addEventListener('click', () => {
+    if(step === 2){
+      step = 3;
+      captureCard.style.display = 'block';
+      previewCanvas.style.display = 'none';
+      overlayCanvas.style.display = 'block';
+      captureBtn.style.display = 'inline-block';
+      retryBtn.style.display = 'none';
+      maskControls.classList.remove('show');
+      result.classList.remove('show');
+      pills[2].classList.remove('active'); pills[2].classList.add('done');
+      pills[3].classList.add('active');
+      instructionHint.textContent = STEP_CONFIG[3].hint;
+      resultLabel.textContent = STEP_CONFIG[3].label;
+      startCameraForStep(3);
+    } else if(step === 3){
+      step = 4;
+      captureCard.style.display = 'none';
+      passportContainer.style.display = 'flex';
+      pills[3].classList.remove('active'); pills[3].classList.add('done');
+      pills[4].classList.add('active');
+      if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+      buildPassport();
+    }
+  });
+
+  function computeAdvancedAnalytics(seedRecord, guardianRecord){
+    const w = seedRecord.bbox.w, h = seedRecord.bbox.h;
+    const aspectRatio = (w / (h || 1)).toFixed(2);
+    const areaPixels = seedRecord.bbox.w * seedRecord.bbox.h;
+    const perimeterApprox = 2 * (w + h);
+    const circularity = ((4 * Math.PI * (areaPixels * 0.7)) / (perimeterApprox * perimeterApprox)).toFixed(2);
+    
+    let shapeClass = 'Esférica';
+    if(aspectRatio > 1.4 || aspectRatio < 0.7) shapeClass = 'Alargada';
+    else if(circularity < 0.65) shapeClass = 'Irregular';
+    else shapeClass = 'Ovalada';
+
+    let distanceSum = 0;
+    seedRecord.palette.forEach(sp => {
+      guardianRecord.palette.forEach(gp => {
+        distanceSum += Math.abs(sp.rgb[0]-gp.rgb[0]) + Math.abs(sp.rgb[1]-gp.rgb[1]) + Math.abs(sp.rgb[2]-gp.rgb[2]);
+      });
+    });
+    const avgDist = distanceSum / (seedRecord.palette.length * guardianRecord.palette.length);
+    const symbiosis = Math.max(15, Math.min(98, Math.round(100 - (avgDist / 442) * 100)));
+
+    return {
+      aspectRatio: aspectRatio + ' mm',
+      shapeClass,
+      circularity,
+      symbiosis: symbiosis + '%'
+    };
+  }
+
+  async function geocodeLocation(query){
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
+        headers: { 'Accept-Language': 'es' }
+      });
+      const data = await res.json();
+      if(data && data.length > 0){
+        return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+      }
+    } catch(e){}
+    return null;
+  }
+
+  function renderPaletteContainer(containerId, palette){
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    palette.forEach(p => {
+      const chip = document.createElement('div');
+      chip.className = 'palette-chip';
+      chip.style.backgroundColor = rgbToHex(p.rgb);
+      container.appendChild(chip);
+    });
+  }
+
+  function renderPointillismDNA(canvasId, combinedPalette){
+    const canvas = document.getElementById(canvasId);
+    const dCtx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+
+    dCtx.fillStyle = '#ffffff';
+    dCtx.fillRect(0, 0, w, h);
+
+    canvas._dnaDots = [];
+
+    const dotsCount = 350;
+    for(let i = 0; i < dotsCount; i++){
+      const paletteItem = combinedPalette[Math.floor(Math.random() * combinedPalette.length)];
+      const x = Math.random() * w;
+      const y = Math.random() * h;
+      const radius = 1 + Math.random() * 2.2;
+      const hex = rgbToHex(paletteItem.rgb);
+
+      dCtx.fillStyle = hex;
+      dCtx.beginPath();
+      dCtx.arc(x, y, radius, 0, Math.PI * 2);
+      dCtx.fill();
+
+      canvas._dnaDots.push({
+        x, y, radius: Math.max(radius, 5),
+        hex,
+        rgb: paletteItem.rgb
+      });
+    }
+  }
+
+  const DNA_SCALE_NOTES = [
+    { name: 'Do', freq: 261.63 },
+    { name: 'Re', freq: 293.66 },
+    { name: 'Mi', freq: 329.63 },
+    { name: 'Fa', freq: 349.23 },
+    { name: 'Sol', freq: 392.00 },
+    { name: 'La', freq: 440.00 },
+    { name: 'Si', freq: 493.88 },
+    { name: 'Do#', freq: 277.18 },
+    { name: 'Re#', freq: 311.13 },
+    { name: 'Fa#', freq: 369.99 },
+    { name: 'Sol#', freq: 415.30 },
+    { name: 'La#', freq: 466.16 }
+  ];
+
+  // Nota base a partir del color hexadecimal del punto de ADN
+  function hexToBaseNote(hex){
+    const clean = (hex || '#000000').replace('#', '');
+    const value = parseInt(clean, 16) || 0;
+    const idx = value % DNA_SCALE_NOTES.length;
+    return DNA_SCALE_NOTES[idx];
+  }
+
+  // Letras del guardián y la semilla entrelazadas — el mismo código que se muestra en el pasaporte
+  function getMixedLetters(guardianName, seedName){
+    const code = generateMixedCode(guardianName || '', seedName || '');
+    const onlyLetters = code.toUpperCase().replace(/[^A-Z]/g, '');
+    return onlyLetters || 'GUARDSEED';
+  }
+
+  // Cada letra del código mezclado desplaza la frecuencia entre -6 y +5 semitonos
+  function letterFrequencyShift(letter){
+    const code = (letter || 'A').toUpperCase().charCodeAt(0) - 65; // A=0 ... Z=25
+    const semitoneShift = (((code % 12) + 12) % 12) - 6;
+    return Math.pow(2, semitoneShift / 12);
+  }
+
+  // Combina: nota base del color hexadecimal + modulación por la letra del código mezclado en este paso
+  function getDnaStepNote(hex, mixedLetters, step){
+    const base = hexToBaseNote(hex);
+    const letter = mixedLetters[step % mixedLetters.length];
+    const multiplier = letterFrequencyShift(letter);
+    return { name: base.name, freq: base.freq * multiplier, letter };
+  }
+
+  let dnaAudioContext = null;
+  let musicSequenceTimer = null;
+  let dnaReverb = null;
+  let dnaReverbWet = null;
+  let dnaChorus = null;
+  let dnaVoiceBus = null;
+  let dnaVoiceChannels = [];
+  let dnaVoiceIndex = 0;
+  let voiceAudioElement = null;
+
+  const VOLUME_MUSIC_BOX = 0.50;
+  const VOLUME_GUARDIAN_VOICE = 0.55;
+  let musicBoxMasterGain = null;
+
+  function createDNAReverb(ac){
+    if(dnaReverb) return;
+    const duration = 2.8;
+    const decay = 2.15;
+    const length = Math.floor(ac.sampleRate * duration);
+    const impulse = ac.createBuffer(2, length, ac.sampleRate);
+
+    for(let channel = 0; channel < impulse.numberOfChannels; channel++){
+      const data = impulse.getChannelData(channel);
+      for(let i = 0; i < length; i++){
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+      }
+    }
+
+    dnaReverb = ac.createConvolver();
+    dnaReverb.buffer = impulse;
+    dnaReverbWet = ac.createGain();
+    dnaReverbWet.gain.value = 0.78;
+    dnaReverb.connect(dnaReverbWet);
+    dnaReverbWet.connect(ac.destination);
+  }
+
+  function createDNAChorus(ac){
+    if(dnaChorus) return;
+    const input = ac.createGain();
+    const wet = ac.createGain();
+    const merger = ac.createChannelMerger(2);
+
+    const delayL = ac.createDelay(0.08);
+    const delayR = ac.createDelay(0.08);
+    const lfoL = ac.createOscillator();
+    const lfoR = ac.createOscillator();
+    const depthL = ac.createGain();
+    const depthR = ac.createGain();
+
+    delayL.delayTime.value = 0.018;
+    delayR.delayTime.value = 0.026;
+    lfoL.frequency.value = 0.72;
+    lfoR.frequency.value = 0.91;
+    depthL.gain.value = 0.008;
+    depthR.gain.value = 0.010;
+
+    lfoL.connect(depthL); depthL.connect(delayL.delayTime);
+    lfoR.connect(depthR); depthR.connect(delayR.delayTime);
+
+    input.connect(delayL); input.connect(delayR);
+    delayL.connect(merger, 0, 0); delayR.connect(merger, 0, 1);
+    merger.connect(wet); wet.gain.value = 0.30;
+    wet.connect(ac.destination);
+
+    lfoL.start(); lfoR.start();
+    dnaChorus = input;
+  }
+
+  function createDNAVoiceChannels(ac){
+    if(dnaVoiceBus) return;
+    dnaVoiceBus = ac.createGain();
+    dnaVoiceBus.gain.value = 1;
+
+    musicBoxMasterGain = ac.createGain();
+    musicBoxMasterGain.gain.value = VOLUME_MUSIC_BOX;
+    musicBoxMasterGain.connect(ac.destination);
+
+    for(let i = 0; i < 8; i++){
+      const channel = ac.createGain();
+      channel.gain.value = 0.72;
+      const panner = ac.createStereoPanner();
+      panner.pan.value = -1 + (i / 7) * 2;
+
+      channel.connect(panner);
+      panner.connect(musicBoxMasterGain);
+      if(dnaReverb) channel.connect(dnaReverb);
+      if(dnaChorus) channel.connect(dnaChorus);
+
+      dnaVoiceChannels.push(channel);
+    }
+    dnaVoiceBus.connect(musicBoxMasterGain);
+  }
+
+  function ensureDNAAudio(){
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if(!AudioCtx) return null;
+    if(!dnaAudioContext) dnaAudioContext = new AudioCtx();
+    if(dnaAudioContext.state === 'suspended') dnaAudioContext.resume();
+    createDNAReverb(dnaAudioContext);
+    createDNAChorus(dnaAudioContext);
+    createDNAVoiceChannels(dnaAudioContext);
+    return dnaAudioContext;
+  }
+
+  function playMusicBoxTone(freq, when, duration=0.32, volume=0.13){
+    const ac = ensureDNAAudio();
+    if(!ac) return;
+
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, when);
+
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.exponentialRampToValueAtTime(volume, when + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + duration);
+
+    osc.connect(gain);
+
+    if(dnaVoiceChannels.length){
+      const channel = dnaVoiceChannels[dnaVoiceIndex % dnaVoiceChannels.length];
+      dnaVoiceIndex++;
+      gain.connect(channel);
+    } else {
+      gain.connect(musicBoxMasterGain || ac.destination);
+    }
+
+    osc.start(when);
+    osc.stop(when + duration + 0.02);
+  }
+
+  function playRecordedVoiceAudio(){
+    if(!recordedAudioUrl) return;
+    if(voiceAudioElement){
+      voiceAudioElement.pause();
+      voiceAudioElement = null;
+    }
+    voiceAudioElement = new Audio(recordedAudioUrl);
+    voiceAudioElement.volume = VOLUME_GUARDIAN_VOICE;
+    voiceAudioElement.play().catch(()=>{});
+  }
+
+  function stopRecordedVoiceAudio(){
+    if(voiceAudioElement){
+      voiceAudioElement.pause();
+      voiceAudioElement = null;
+    }
+  }
+
+  function playDNASequence(dots){
+    if(!dots || !dots.length) return;
+    const ac = ensureDNAAudio();
+    if(!ac) return;
+
+    const playBtn = document.getElementById('dnaPlayBtn');
+
+    if(window.dnaMusicPlaying){
+      stopDNASequence();
+      return;
+    }
+
+    window.dnaMusicPlaying = true;
+    if(playBtn) playBtn.textContent = '⏹';
+    playRecordedVoiceAudio();
+
+    const STEPS_PER_BAR = 16;
+    const BPM = 40;
+    const SIXTEENTH = 60 / BPM / 4;
+
+    const mixedLetters = getMixedLetters(formData.guardianName, formData.seedName);
+
+    function playBar(){
+      if(!window.dnaMusicPlaying) return;
+      const barStart = ac.currentTime + 0.035;
+
+    // Generar secuencia de notas: color hexadecimal del punto (nota base) + letra del código mezclado (modula la frecuencia)
+    for(let step = 0; step < STEPS_PER_BAR; step++){
+      const dot = dots[Math.floor(step * dots.length / STEPS_PER_BAR)] || dots[0];
+      const noteData = getDnaStepNote(dot.hex, mixedLetters, step);
+
+      const yNorm = Math.max(0, Math.min(1, dot.y / 32));
+      const duration = 0.13 + (1 - yNorm) * 0.16;
+      const volume = 0.08 + (1 - yNorm) * 0.07;
+
+      const when = barStart + step * SIXTEENTH;
+      playMusicBoxTone(noteData.freq, when, Math.min(duration, SIXTEENTH * 0.92), volume);
+
+      setTimeout(() => {
+        if(!window.dnaMusicPlaying) return;
+        const status = document.getElementById('dnaNoteStatus');
+        if(status){
+          const beat = Math.floor(step / 4) + 1;
+          const subdivision = (step % 4) + 1;
+          status.textContent = 'Caja musical (' + dot.hex + ' · letra "' + noteData.letter + '") + voz · ' + beat + '.' + subdivision + ' · ' + noteData.name;
+        }
+      }, Math.max(0, (when - ac.currentTime) * 1000));
+    }
+
+      musicSequenceTimer = setTimeout(playBar, STEPS_PER_BAR * SIXTEENTH * 1000);
+    }
+
+    const status = document.getElementById('dnaNoteStatus');
+    if(status){
+      status.textContent = 'Caja musical: color del ADN + letras de "' + mixedLetters + '" + voz reproduciéndose.';
+    }
+
+    playBar();
+  }
+
+  function stopDNASequence(){
+    window.dnaMusicPlaying = false;
+    const playBtn = document.getElementById('dnaPlayBtn');
+    if(playBtn) playBtn.textContent = '▶';
+    stopRecordedVoiceAudio();
+
+    if(musicSequenceTimer){
+      clearTimeout(musicSequenceTimer);
+      musicSequenceTimer = null;
+    }
+
+    const status = document.getElementById('dnaNoteStatus');
+    if(status){
+      status.textContent = 'Caja musical y voz detenidas · haz clic para volver a reproducir.';
+    }
+  }
+
+  async function renderMusicBoxToOfflineCtx(offlineCtx, duration, sampleRate){
+    const revDuration = 2.8;
+    const revDecay = 2.15;
+    const revLen = Math.floor(sampleRate * revDuration);
+    const impulse = offlineCtx.createBuffer(2, revLen, sampleRate);
+    for(let ch = 0; ch < impulse.numberOfChannels; ch++){
+      const data = impulse.getChannelData(ch);
+      for(let i = 0; i < revLen; i++){
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / revLen, revDecay);
+      }
+    }
+    const offlineReverb = offlineCtx.createConvolver();
+    offlineReverb.buffer = impulse;
+    const offlineReverbWet = offlineCtx.createGain();
+    offlineReverbWet.gain.value = 0.78;
+    offlineReverb.connect(offlineReverbWet);
+    offlineReverbWet.connect(offlineCtx.destination);
+
+    const musicBoxMaster = offlineCtx.createGain();
+    musicBoxMaster.gain.value = VOLUME_MUSIC_BOX;
+    musicBoxMaster.connect(offlineCtx.destination);
+
+    const dots = document.getElementById('dnaCanvas')._dnaDots || [];
+    const mixedLetters = getMixedLetters(formData.guardianName, formData.seedName);
+
+    const BPM = 40;
+    const SIXTEENTH = 60 / BPM / 4;
+    const STEPS_PER_BAR = 16;
+    const barDuration = STEPS_PER_BAR * SIXTEENTH;
+    let currentTime = 0;
+
+    while(currentTime < duration){
+      for(let step = 0; step < STEPS_PER_BAR; step++){
+        if(!dots.length) break;
+        const dot = dots[Math.floor(step * dots.length / STEPS_PER_BAR)] || dots[0];
+        const noteData = getDnaStepNote(dot.hex, mixedLetters, step);
+        const when = currentTime + step * SIXTEENTH;
+        if(when >= duration) break;
+
+        const osc = offlineCtx.createOscillator();
+        const gain = offlineCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(noteData.freq, when);
+
+        gain.gain.setValueAtTime(0.0001, when);
+        gain.gain.exponentialRampToValueAtTime(0.13, when + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.32);
+
+        osc.connect(gain);
+        gain.connect(musicBoxMaster);
+        gain.connect(offlineReverb);
+
+        osc.start(when);
+        osc.stop(when + 0.35);
+      }
+      currentTime += barDuration;
+    }
+  }
+
+  async function generateMusicBoxWebmBlob(minDuration){
+    const sampleRate = 44100;
+    const duration = Math.max(minDuration || 12.0, 12.0);
+    const offlineCtx = new OfflineAudioContext(2, Math.ceil(sampleRate * duration), sampleRate);
+    await renderMusicBoxToOfflineCtx(offlineCtx, duration, sampleRate);
+    const renderedBuffer = await offlineCtx.startRendering();
+
+    const ac = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
+    const sourceNode = ac.createBufferSource();
+    sourceNode.buffer = renderedBuffer;
+
+    const dest = ac.createMediaStreamDestination();
+    sourceNode.connect(dest);
+
+    let options = { mimeType: 'audio/webm;codecs=opus' };
+    if(!MediaRecorder.isTypeSupported(options.mimeType)){
+      options = { mimeType: 'audio/webm' };
+      if(!MediaRecorder.isTypeSupported(options.mimeType)){
+        options = {};
+      }
+    }
+
+    return new Promise((resolve) => {
+      const chunks = [];
+      const recorder = new MediaRecorder(dest.stream, options);
+      recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = async () => {
+        await ac.close();
+        resolve(new Blob(chunks, { type: 'audio/webm' }));
+      };
+
+      recorder.start();
+      sourceNode.start(0);
+
+      setTimeout(() => {
+        if(recorder.state === 'recording') recorder.stop();
+      }, duration * 1000 + 150);
+    });
+  }
+
+  function getRecordedAudioDuration(){
+    return new Promise((resolve) => {
+      if(!recordedAudioUrl){ resolve(12); return; }
+      const a = document.createElement('audio');
+      a.src = recordedAudioUrl;
+      a.addEventListener('loadedmetadata', () => resolve(isFinite(a.duration) && a.duration > 0 ? a.duration : 12));
+      a.addEventListener('error', () => resolve(12));
+    });
+  }
+
+  function slugify(str){
+    return (str || 'guardian')
+      .toString()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'guardian';
+  }
+
+  async function exportFichaPDF(){
+    const passportEl = document.querySelector('.passport');
+    const playBtnEl = document.getElementById('dnaPlayBtn');
+    if(!passportEl || typeof html2canvas === 'undefined' || !window.jspdf) return null;
+
+    if(playBtnEl) playBtnEl.style.display = 'none';
+
+    let doc = null;
+    try{
+      const canvas = await html2canvas(passportEl, { backgroundColor: '#ffffff', scale: 2, useCORS: true });
+      const imgData = canvas.toDataURL('image/png');
+      const { jsPDF } = window.jspdf;
+      const pdfWidth = 210;
+      const pdfHeight = pdfWidth * canvas.height / canvas.width;
+      doc = new jsPDF({ orientation: pdfHeight >= pdfWidth ? 'portrait' : 'landscape', unit: 'mm', format: [pdfWidth, pdfHeight] });
+      doc.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+    }catch(err){
+      doc = null;
+    } finally {
+      if(playBtnEl) playBtnEl.style.display = 'flex';
+    }
+    return doc;
+  }
+
+  async function finishExperienceAutoSave(){
+    const slug = slugify(formData.guardianName);
+
+    try{
+      const doc = await exportFichaPDF();
+      if(doc){
+        await saveBlobToServer(doc.output('blob'), `ficha-${slug}.pdf`);
+      }
+    }catch(e){}
+
+    await new Promise(r => setTimeout(r, 250));
+
+    if(recordedAudioBlob){
+      await saveBlobToServer(recordedAudioBlob, `audio-guardian-${slug}.webm`);
+      await new Promise(r => setTimeout(r, 250));
+    }
+
+    try{
+      const dur = await getRecordedAudioDuration();
+      const musicBlob = await generateMusicBoxWebmBlob(dur);
+      if(musicBlob){
+        await saveBlobToServer(musicBlob, `caja-musical-${slug}.webm`);
+      }
+    }catch(e){}
+  }
+
+  function setupDNAInteraction(){
+    const canvas = document.getElementById('dnaCanvas');
+    const container = document.getElementById('dnaInteractive');
+    const playBtn = document.getElementById('dnaPlayBtn');
+    if(!canvas || canvas._dnaInteractionReady) return;
+
+    canvas._dnaInteractionReady = true;
+    canvas.tabIndex = 0;
+
+    const triggerSequence = (e) => {
+      if(e && e.cancelable) e.preventDefault();
+      playDNASequence(canvas._dnaDots || []);
+    };
+
+    canvas.addEventListener('click', triggerSequence);
+    canvas.addEventListener('touchend', triggerSequence, {passive:false});
+    if(playBtn) playBtn.addEventListener('click', triggerSequence);
+
+    canvas.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' || e.key === ' '){
+        e.preventDefault();
+        triggerSequence(e);
+      }
+    });
+
+    if(container){
+      container.setAttribute('role', 'button');
+      container.setAttribute('aria-label', 'Reproducir ADN cromático y voz como caja musical');
+    }
+  }
+
+  function generateMixedCode(guardianStr, seedStr){
+    const cleanG = guardianStr.replace(/[^a-zA-Z]/g, '').toUpperCase();
+    const cleanS = seedStr.replace(/[^a-zA-Z]/g, '').toUpperCase();
+    
+    let mixed = '';
+    const maxLen = Math.max(cleanG.length, cleanS.length);
+    for(let i = 0; i < Math.min(maxLen, 6); i++){
+      if(i < cleanG.length) mixed += cleanG[i];
+      if(i < cleanS.length) mixed += cleanS[i];
+    }
+    return mixed || 'GUARD-SEED';
+  }
+
+  async function buildPassport(){
+    document.getElementById('valGuardian').textContent = formData.guardianName;
+    document.getElementById('valGuardianOrigin').textContent = formData.guardianOrigin;
+    document.getElementById('valGuardianWeight').textContent = formData.guardianWeight;
+    document.getElementById('valSeed').textContent = formData.seedName;
+    document.getElementById('valSeedOrigin').textContent = formData.seedOrigin;
+    document.getElementById('valSeedWeight').textContent = formData.seedWeight;
+
+    const mixedCode = generateMixedCode(formData.guardianName, formData.seedName);
+    document.getElementById('passId').textContent = mixedCode;
+
+    const totalGramsPersona = formData.guardianWeight * 1000;
+    const semillasCaben = Math.round(totalGramsPersona / formData.seedWeight);
+    document.getElementById('valSeedCountRatio').textContent = semillasCaben.toLocaleString('es-ES') + ' semillas';
+
+    const analytics = computeAdvancedAnalytics(seed, guardian);
+    document.getElementById('passAspect').textContent = analytics.aspectRatio;
+    document.getElementById('passShape').textContent = analytics.shapeClass;
+    document.getElementById('passCircularity').textContent = analytics.circularity;
+    document.getElementById('passSymbiosis').textContent = analytics.symbiosis;
+
+    renderPaletteContainer('guardianPalettePreview', guardian.palette);
+    renderPaletteContainer('seedPalettePreview', seed.palette);
+
+    const combined = guardian.palette.concat(seed.palette);
+    renderPointillismDNA('dnaCanvas', combined);
+    setupDNAInteraction();
+
+    setTimeout(async () => {
+      if(mapInstance){ mapInstance.remove(); mapInstance = null; }
+      mapInstance = L.map('map', { zoomControl: false, attributionControl: false }).setView([4.6, -74.0], 5);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance);
+
+      const [gCoords, sCoords] = await Promise.all([
+        geocodeLocation(formData.guardianOrigin),
+        geocodeLocation(formData.seedOrigin)
+      ]);
+
+      const defaultCoords = [1.2136, -77.2811];
+      const p1 = gCoords || defaultCoords;
+      const p2 = sCoords || [1.1491, -76.6472];
+
+      L.marker(p1).addTo(mapInstance).bindPopup(`<b>Guardián:</b> ${formData.guardianOrigin}`);
+      L.marker(p2).addTo(mapInstance).bindPopup(`<b>Semilla:</b> ${formData.seedOrigin}`);
+
+      const polyline = L.polyline([p1, p2], { color: '#000000', weight: 3, dashArray: '5, 5' }).addTo(mapInstance);
+      mapInstance.fitBounds(polyline.getBounds(), { padding: [30, 30] });
+    }, 200);
+
+    setTimeout(() => { finishExperienceAutoSave(); }, 900);
+  }
+
+  restartBtn.addEventListener('click', () => {
+    window.location.reload();
+  });
+})();
+</script>
+</body>
+</html>
