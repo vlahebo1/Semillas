@@ -4,17 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Carné del Guardián y Pasaporte de Semilla — Banco de Semillas</title>
-<!-- TensorFlow.js y BlazeFace con carga asíncrona segura -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
-<!-- Leaflet.js para mapas -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<!-- html2canvas + jsPDF para exportar la ficha en PDF -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<!-- Todas las librerías se cargan localmente desde vendor/ — la app funciona sin conexión a internet -->
+<script>window.__vendorLoadErrors = [];</script>
+<script src="vendor/html2canvas.min.js" onerror="window.__vendorLoadErrors.push('vendor/html2canvas.min.js')"></script>
+<script src="vendor/jspdf.umd.min.js" onerror="window.__vendorLoadErrors.push('vendor/jspdf.umd.min.js')"></script>
 
 <style>
 :root{
@@ -132,7 +125,7 @@ body{
 .dna-strip canvas{width:100%; height:100%; display:block;}
 
 #mapContainer{margin-top:16px; border:1px solid var(--line); background:var(--bg); padding:4px;}
-#map{height:260px; width:100%; background:#eaeaea;}
+#originCanvas{width:100%; height:auto; display:block; background:#ffffff;}
 .dna-strip{cursor:pointer; touch-action:manipulation; position:relative;}
 .dna-strip:focus{outline:2px solid var(--line); outline-offset:2px;}
 .dna-note-status{
@@ -145,6 +138,8 @@ body{
 </style>
 </head>
 <body>
+
+<div id="vendorErrorBanner" style="display:none; background:#b33; color:#fff; padding:12px 18px; font-family:Tahoma, Geneva, sans-serif; font-size:12.5px; line-height:1.6; text-align:center;"></div>
 
 <div class="sheet">
   <div class="masthead">
@@ -231,6 +226,12 @@ body{
           <input type="text" id="seedOrigin" class="form-input" value="Mocoa, Colombia">
         </div>
       </div>
+      <div class="form-row">
+        <div class="form-group" style="grid-column: 1 / -1;">
+          <label for="seedCenterOrigin">Centro de origen de la semilla</label>
+          <input type="text" id="seedCenterOrigin" class="form-input" value="Mesoamérica" placeholder="Ej. Mesoamérica, Andes, Región Andina de Colombia…">
+        </div>
+      </div>
     </div>
     <div class="next-row">
       <button class="btn primary" id="startAudioStepBtn" type="button">Continuar a grabación de audio →</button>
@@ -291,7 +292,7 @@ body{
   </div>
 
   <!-- Pasaporte Final con Datos, Paletas, ADN y Reproducción de Audio en la Caja Musical -->
-  <div id="passportContainer" style="display:none; justify-content:center; width:100%;">
+  <div id="passportContainer" style="display:none; flex-direction:column; align-items:center; justify-content:center; width:100%;">
     <div class="passport">
         <div class="pass-header">
             <div>
@@ -316,6 +317,10 @@ body{
             <div class="pass-data-item">
                 <span class="pass-data-label">Origen de la semilla:</span>
                 <span class="pass-data-value" id="valSeedOrigin">--</span>
+            </div>
+            <div class="pass-data-item">
+                <span class="pass-data-label">Centro de origen de la semilla:</span>
+                <span class="pass-data-value" id="valSeedCenterOrigin">--</span>
             </div>
             <div class="pass-data-item" style="background:#e2e2e2; padding:4px;">
                 <span class="pass-data-label" style="font-weight:bold;">Semillas equivalentes al peso corporal:</span>
@@ -354,15 +359,39 @@ body{
         <div class="dna-note-status" id="dnaNoteStatus">Haz clic en el botón de reproducción o sobre el ADN para escuchar la caja musical y la historia del guardián.</div>
 
         <div id="mapContainer">
-            <div style="font-size:10px; font-weight:bold; text-transform:uppercase; margin-bottom:4px; padding:4px;">Trayecto geográfico del intercambio</div>
-            <div id="map"></div>
+            <div style="font-size:10px; font-weight:bold; text-transform:uppercase; margin-bottom:4px; padding:4px;">Trayecto de origen (sin conexión)</div>
+            <canvas id="originCanvas" width="580" height="230"></canvas>
         </div>
+    </div>
+    <div id="saveStatus" style="max-width:640px; margin:10px auto 0; font-family:'Courier New', monospace; font-size:10.5px; color:#555555; text-align:center;"></div>
+    <div style="text-align:center; margin-top:8px;">
+      <button class="btn" id="retrySaveBtn" type="button" style="padding:6px 12px; font-size:10px;">Reintentar guardado</button>
     </div>
   </div>
 </div>
 
 <script>
 (function(){
+  // Aviso inmediato y visible si vendor/html2canvas.min.js o vendor/jspdf.umd.min.js no cargaron
+  // (carpeta vendor/ ausente, mal ubicada, o archivos incompletos) — sin esto, la ficha en PDF
+  // no se puede generar más adelante, y antes fallaba en silencio.
+  function checkVendorLibraries(){
+    const missing = (window.__vendorLoadErrors || []).slice();
+    if(typeof html2canvas === 'undefined' && missing.indexOf('vendor/html2canvas.min.js') === -1){
+      missing.push('vendor/html2canvas.min.js');
+    }
+    if((!window.jspdf || !window.jspdf.jsPDF) && missing.indexOf('vendor/jspdf.umd.min.js') === -1){
+      missing.push('vendor/jspdf.umd.min.js');
+    }
+    const banner = document.getElementById('vendorErrorBanner');
+    if(missing.length && banner){
+      banner.style.display = 'block';
+      banner.textContent = 'No se pudieron cargar: ' + missing.join(', ') + '. La ficha en PDF no podrá generarse hasta que la carpeta "vendor/" esté junto a index.html en el servidor.';
+    }
+    return missing;
+  }
+  checkVendorLibraries();
+
   const video = document.getElementById('video');
   const overlayCanvas = document.getElementById('overlayCanvas');
   const ctx = overlayCanvas.getContext('2d');
@@ -573,8 +602,6 @@ body{
     }
   }
 
-  let mapInstance = null;
-
   // Grabación de voz
   let mediaRecorder = null;
   let recordedAudioChunks = [];
@@ -590,7 +617,9 @@ body{
     guardianWeight: 65,
     seedName: '',
     seedOrigin: '',
-    seedWeight: 0.35
+    seedCenterOrigin: '',
+    seedWeight: 0.35,
+    compatibilityIndex: 50
   };
 
   const STEP_CONFIG = {
@@ -605,6 +634,7 @@ body{
     formData.guardianWeight = parseFloat(document.getElementById('guardianWeight').value) || 65;
     formData.seedName = document.getElementById('seedName').value.trim() || 'Maíz amarillo nativo';
     formData.seedOrigin = document.getElementById('seedOrigin').value.trim() || 'Mocoa, Colombia';
+    formData.seedCenterOrigin = document.getElementById('seedCenterOrigin').value.trim() || 'Mesoamérica';
     formData.seedWeight = parseFloat(document.getElementById('seedWeight').value) || 0.35;
 
     registerCard.style.display = 'none';
@@ -617,8 +647,10 @@ body{
 
   async function initAudioRecorderPreview(){
     try {
-      audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioStatusText.textContent = 'Micrófono listo. Pulsa iniciar para grabar (60s).';
+      audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: { noiseSuppression: { ideal: true }, echoCancellation: { ideal: true } }
+      });
+      audioStatusText.textContent = 'Micrófono listo (con cancelación de ruido). Pulsa iniciar para grabar (60s).';
     } catch(err){
       audioStatusText.textContent = 'Micrófono no disponible o denegado. Puedes omitir este paso.';
       skipAudioBtn.style.display = 'inline-block';
@@ -628,7 +660,9 @@ body{
   recordAudioBtn.addEventListener('click', async () => {
     if(!audioStream){
       try {
-        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStream = await navigator.mediaDevices.getUserMedia({
+          audio: { noiseSuppression: { ideal: true }, echoCancellation: { ideal: true } }
+        });
       } catch(e){
         proceedToFaceCapture();
         return;
@@ -1176,21 +1210,9 @@ body{
       aspectRatio: aspectRatio + ' mm',
       shapeClass,
       circularity,
-      symbiosis: symbiosis + '%'
+      symbiosis: symbiosis + '%',
+      symbiosisValue: symbiosis
     };
-  }
-
-  async function geocodeLocation(query){
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
-        headers: { 'Accept-Language': 'es' }
-      });
-      const data = await res.json();
-      if(data && data.length > 0){
-        return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-      }
-    } catch(e){}
-    return null;
   }
 
   function renderPaletteContainer(containerId, palette){
@@ -1235,6 +1257,93 @@ body{
       });
     }
   }
+
+  // Envuelve texto largo en varias líneas dentro de un ancho máximo, centrado en x
+  function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines){
+    const words = (text || '—').split(/\s+/);
+    const lines = [];
+    let line = '';
+    for(let i = 0; i < words.length; i++){
+      const test = line ? line + ' ' + words[i] : words[i];
+      if(ctx.measureText(test).width > maxWidth && line){
+        lines.push(line);
+        line = words[i];
+      } else {
+        line = test;
+      }
+    }
+    if(line) lines.push(line);
+
+    const cap = maxLines || lines.length;
+    const shown = lines.slice(0, cap);
+    if(lines.length > cap){
+      shown[cap - 1] = shown[cap - 1].replace(/\s*\S*$/, '') + '…';
+    }
+    shown.forEach((l, i) => ctx.fillText(l, x, y + i * lineHeight));
+    return shown.length;
+  }
+
+  // Diagrama sin conexión: une origen del guardián, origen de la semilla y su centro de origen
+  function renderOriginTriangle(canvasId, guardianOrigin, seedOrigin, seedCenterOrigin){
+    const canvas = document.getElementById(canvasId);
+    if(!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+
+    const points = [
+      { key: 'center',   x: w / 2,     y: 46,     label: 'Centro de origen de la semilla', value: seedCenterOrigin, side: 'below' },
+      { key: 'guardian', x: w * 0.16,  y: h - 40, label: 'Origen del guardián',             value: guardianOrigin,   side: 'above' },
+      { key: 'seed',     x: w * 0.84,  y: h - 40, label: 'Origen de la semilla',            value: seedOrigin,       side: 'above' }
+    ];
+    const byKey = {};
+    points.forEach(p => { byKey[p.key] = p; });
+
+    // líneas del triángulo, punteadas al estilo de la cartilla
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.3;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(byKey.center.x, byKey.center.y);
+    ctx.lineTo(byKey.guardian.x, byKey.guardian.y);
+    ctx.moveTo(byKey.center.x, byKey.center.y);
+    ctx.lineTo(byKey.seed.x, byKey.seed.y);
+    ctx.moveTo(byKey.guardian.x, byKey.guardian.y);
+    ctx.lineTo(byKey.seed.x, byKey.seed.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // nodos
+    points.forEach(p => {
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 9, 0, Math.PI * 2);
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+
+    // etiquetas y valores
+    ctx.textAlign = 'center';
+    points.forEach(p => {
+      const labelY = p.side === 'above' ? p.y - 30 : p.y + 26;
+      const valueY = p.side === 'above' ? p.y - 16 : p.y + 40;
+
+      ctx.font = "bold 9px Tahoma, Geneva, sans-serif";
+      ctx.fillStyle = '#000000';
+      ctx.fillText(p.label.toUpperCase(), p.x, labelY);
+
+      ctx.font = "11px 'Courier New', monospace";
+      wrapCanvasText(ctx, p.value || '—', p.x, valueY, Math.min(200, w * 0.34), 13, 2);
+    });
+  }
+
 
   const DNA_SCALE_NOTES = [
     { name: 'Do', freq: 261.63 },
@@ -1290,9 +1399,17 @@ body{
   let dnaVoiceChannels = [];
   let dnaVoiceIndex = 0;
   let voiceAudioElement = null;
+  let voiceGainNode = null;
+  let voiceStartTimeout = null;
+
+  let radioOsc = null;
+  let radioGain = null;
+  let radioTimer = null;
 
   const VOLUME_MUSIC_BOX = 0.50;
   const VOLUME_GUARDIAN_VOICE = 0.55;
+  const VOLUME_SEED_DRONE = 0.09;
+  const VOLUME_RADIO_DRIFT = 0.025;
   let musicBoxMasterGain = null;
 
   function createDNAReverb(ac){
@@ -1385,6 +1502,127 @@ body{
     return dnaAudioContext;
   }
 
+  // El peso de la semilla define el tono del drone: semillas livianas → más agudo, pesadas → más grave.
+  // Referencia: 1 g ≈ 110 Hz (La2); cada vez que el peso se duplica, baja una octava.
+  function seedWeightToDroneFreq(weightGrams){
+    const w = Math.max(0.01, Number(weightGrams) || 1);
+    const freq = 110 * Math.pow(2, -Math.log2(w));
+    return Math.max(35, Math.min(180, freq));
+  }
+
+  // Un solo golpe de drone: entra suave y se apaga antes del siguiente golpe (cada dos tiempos)
+  function scheduleDronePulse(ac, destination, reverbNode, freq, when, pulseDuration){
+    if(!ac) return;
+    const attack = Math.min(0.35, pulseDuration * 0.25);
+    const release = Math.max(0.3, pulseDuration - attack);
+
+    const gain = ac.createGain();
+    const filter = ac.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = Math.min(320, Math.max(120, freq * 2.2));
+    filter.Q.value = 0.5;
+
+    const osc1 = ac.createOscillator();
+    osc1.type = 'sine';
+    osc1.frequency.value = freq;
+    const osc2 = ac.createOscillator();
+    osc2.type = 'sine';
+    osc2.frequency.value = freq * 1.003; // ligero desafine para dar cuerpo, sin armónicos brillantes
+
+    osc1.connect(filter);
+    osc2.connect(filter);
+    filter.connect(gain);
+    gain.connect(destination);
+    if(reverbNode) gain.connect(reverbNode);
+
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.exponentialRampToValueAtTime(VOLUME_SEED_DRONE, when + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + attack + release);
+
+    const stopAt = when + attack + release + 0.05;
+    osc1.start(when); osc2.start(when);
+    osc1.stop(stopAt); osc2.stop(stopAt);
+  }
+
+  // El índice de compatibilidad (guardián/semilla) define el "carácter" de la sintonía:
+  // más compatibilidad → tono más agudo y deriva más angosta/lenta (como si encontrara la señal);
+  // menos compatibilidad → deriva más amplia/rápida (como buscando estación sin encontrarla).
+  function symbiosisToRadioParams(symbiosisPercent){
+    const s = Math.max(0, Math.min(100, Number(symbiosisPercent) || 50)) / 100;
+    const centerFreq = 2200 + s * 2600;   // ~2200–4800 Hz
+    const wobbleRange = 900 - s * 650;    // ~900Hz (baja compatibilidad) a ~250Hz (alta)
+    const stepTime = 0.35 - s * 0.18;     // salta de frecuencia cada 0.17–0.35s
+    return { centerFreq, wobbleRange, stepTime };
+  }
+
+  function startRadioDrift(ac, symbiosisPercent, pulseDuration){
+    stopRadioDrift();
+    if(!ac) return;
+
+    const { centerFreq, wobbleRange, stepTime } = symbiosisToRadioParams(symbiosisPercent);
+    const dur = Math.max(0.6, pulseDuration || 3);
+    const fadeIn = Math.min(0.3, dur * 0.25);
+    const fadeOut = Math.min(0.8, dur * 0.4);
+
+    radioGain = ac.createGain();
+    radioGain.gain.setValueAtTime(0.0001, ac.currentTime);
+    radioGain.connect(musicBoxMasterGain || ac.destination);
+
+    radioOsc = ac.createOscillator();
+    radioOsc.type = 'sine';
+    radioOsc.frequency.value = centerFreq;
+    radioOsc.connect(radioGain);
+    radioOsc.start(ac.currentTime);
+
+    const now = ac.currentTime;
+    const endTime = now + dur;
+    radioGain.gain.linearRampToValueAtTime(VOLUME_RADIO_DRIFT, now + fadeIn);
+    radioGain.gain.setValueAtTime(VOLUME_RADIO_DRIFT, now + Math.max(fadeIn, dur - fadeOut));
+    radioGain.gain.exponentialRampToValueAtTime(0.0001, endTime);
+
+    const step = () => {
+      if(!radioOsc || ac.currentTime >= endTime - 0.03) return;
+      const target = Math.max(80, centerFreq + (Math.random() * 2 - 1) * (wobbleRange / 2));
+      const t = ac.currentTime;
+      try{
+        radioOsc.frequency.cancelScheduledValues(t);
+        radioOsc.frequency.setValueAtTime(radioOsc.frequency.value, t);
+        radioOsc.frequency.linearRampToValueAtTime(target, Math.min(endTime, t + stepTime));
+      }catch(e){}
+      radioTimer = setTimeout(step, stepTime * 1000);
+    };
+    step();
+
+    // se detiene y limpia solo, al terminar su propio fade — no depende de stopDNASequence
+    const osc = radioOsc, gainNode = radioGain;
+    setTimeout(() => {
+      try{ osc.stop(); }catch(e){}
+      try{ osc.disconnect(); }catch(e){}
+      try{ gainNode.disconnect(); }catch(e){}
+      if(radioOsc === osc){ radioOsc = null; radioGain = null; }
+      if(radioTimer){ clearTimeout(radioTimer); radioTimer = null; }
+    }, dur * 1000 + 150);
+  }
+
+  function stopRadioDrift(){
+    if(radioTimer){ clearTimeout(radioTimer); radioTimer = null; }
+    if(radioGain && dnaAudioContext){
+      try{
+        const now = dnaAudioContext.currentTime;
+        radioGain.gain.cancelScheduledValues(now);
+        radioGain.gain.setValueAtTime(Math.max(radioGain.gain.value, 0.0001), now);
+        radioGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
+      }catch(e){}
+    }
+    const osc = radioOsc, gainNode = radioGain;
+    radioOsc = null; radioGain = null;
+    setTimeout(() => {
+      try{ osc && osc.stop(); }catch(e){}
+      try{ osc && osc.disconnect(); }catch(e){}
+      try{ gainNode && gainNode.disconnect(); }catch(e){}
+    }, 900);
+  }
+
   function playMusicBoxTone(freq, when, duration=0.32, volume=0.13){
     const ac = ensureDNAAudio();
     if(!ac) return;
@@ -1415,19 +1653,80 @@ body{
 
   function playRecordedVoiceAudio(){
     if(!recordedAudioUrl) return;
-    if(voiceAudioElement){
-      voiceAudioElement.pause();
-      voiceAudioElement = null;
+    stopRecordedVoiceAudio();
+
+    const ac = ensureDNAAudio();
+    if(!ac){
+      // Respaldo sin Web Audio (navegador sin soporte): reproduce directo, sin fades.
+      voiceAudioElement = new Audio(recordedAudioUrl);
+      voiceAudioElement.volume = VOLUME_GUARDIAN_VOICE;
+      voiceStartTimeout = setTimeout(() => { voiceAudioElement && voiceAudioElement.play().catch(()=>{}); }, 5000);
+      return;
     }
-    voiceAudioElement = new Audio(recordedAudioUrl);
-    voiceAudioElement.volume = VOLUME_GUARDIAN_VOICE;
-    voiceAudioElement.play().catch(()=>{});
+
+    const el = new Audio(recordedAudioUrl);
+    voiceAudioElement = el;
+
+    const startDelay = 5;    // segundos de silencio antes de iniciar
+    const fadeTime = 1.2;    // duración del fade in / fade out
+
+    voiceStartTimeout = setTimeout(() => {
+      voiceStartTimeout = null;
+      if(voiceAudioElement !== el) return; // se detuvo/reemplazó mientras esperaba
+
+      voiceGainNode = ac.createGain();
+      voiceGainNode.gain.value = 0.0001;
+      voiceGainNode.connect(ac.destination);
+
+      let sourceNode;
+      try{
+        sourceNode = ac.createMediaElementSource(el);
+      }catch(e){
+        el.volume = VOLUME_GUARDIAN_VOICE;
+        el.play().catch(()=>{});
+        return;
+      }
+      sourceNode.connect(voiceGainNode);
+      el.volume = 1;
+
+      const applyFades = () => {
+        const dur = isFinite(el.duration) && el.duration > 0 ? el.duration : 8;
+        const inTime = Math.min(fadeTime, dur / 2);
+        const outTime = Math.min(fadeTime, dur / 2);
+        const now = ac.currentTime;
+        voiceGainNode.gain.cancelScheduledValues(now);
+        voiceGainNode.gain.setValueAtTime(0.0001, now);
+        voiceGainNode.gain.exponentialRampToValueAtTime(VOLUME_GUARDIAN_VOICE, now + inTime);
+        const fadeOutStart = Math.max(inTime, dur - outTime);
+        voiceGainNode.gain.setValueAtTime(VOLUME_GUARDIAN_VOICE, now + fadeOutStart);
+        voiceGainNode.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      };
+
+      if(el.readyState >= 1) applyFades();
+      else el.addEventListener('loadedmetadata', applyFades, { once: true });
+
+      el.play().catch(()=>{});
+    }, startDelay * 1000);
   }
 
   function stopRecordedVoiceAudio(){
+    if(voiceStartTimeout){
+      clearTimeout(voiceStartTimeout);
+      voiceStartTimeout = null;
+    }
+    if(voiceGainNode && dnaAudioContext){
+      try{
+        const now = dnaAudioContext.currentTime;
+        voiceGainNode.gain.cancelScheduledValues(now);
+        voiceGainNode.gain.setValueAtTime(Math.max(voiceGainNode.gain.value, 0.0001), now);
+        voiceGainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+      }catch(e){}
+      voiceGainNode = null;
+    }
     if(voiceAudioElement){
-      voiceAudioElement.pause();
+      const el = voiceAudioElement;
       voiceAudioElement = null;
+      setTimeout(() => { try{ el.pause(); }catch(e){} }, 320);
     }
   }
 
@@ -1450,6 +1749,9 @@ body{
     const STEPS_PER_BAR = 16;
     const BPM = 40;
     const SIXTEENTH = 60 / BPM / 4;
+    const droneFreq = seedWeightToDroneFreq(formData.seedWeight);
+    const dronePulseDuration = 8 * SIXTEENTH; // dos tiempos
+    let radioDriftFired = false;
 
     const mixedLetters = getMixedLetters(formData.guardianName, formData.seedName);
 
@@ -1468,6 +1770,17 @@ body{
 
       const when = barStart + step * SIXTEENTH;
       playMusicBoxTone(noteData.freq, when, Math.min(duration, SIXTEENTH * 0.92), volume);
+
+      // El drone del peso de la semilla golpea cada dos tiempos (cada 8 dieciseisavos)
+      if(step % 8 === 0){
+        scheduleDronePulse(ac, musicBoxMasterGain || ac.destination, dnaReverb, droneFreq, when, dronePulseDuration);
+
+        // El drone de sintonización de radio solo suena junto al primer golpe, luego fade out y se apaga
+        if(!radioDriftFired && step === 0){
+          radioDriftFired = true;
+          startRadioDrift(ac, formData.compatibilityIndex, dronePulseDuration);
+        }
+      }
 
       setTimeout(() => {
         if(!window.dnaMusicPlaying) return;
@@ -1496,6 +1809,8 @@ body{
     const playBtn = document.getElementById('dnaPlayBtn');
     if(playBtn) playBtn.textContent = '▶';
     stopRecordedVoiceAudio();
+    stopRadioDrift();
+    // Los golpes de drone ya programados se apagan solos con su propio envolvente; no hace falta detenerlos a mano.
 
     if(musicSequenceTimer){
       clearTimeout(musicSequenceTimer);
@@ -1532,12 +1847,46 @@ body{
 
     const dots = document.getElementById('dnaCanvas')._dnaDots || [];
     const mixedLetters = getMixedLetters(formData.guardianName, formData.seedName);
+    const droneFreq = seedWeightToDroneFreq(formData.seedWeight);
 
     const BPM = 40;
     const SIXTEENTH = 60 / BPM / 4;
     const STEPS_PER_BAR = 16;
     const barDuration = STEPS_PER_BAR * SIXTEENTH;
+    const dronePulseDuration = 8 * SIXTEENTH; // dos tiempos
     let currentTime = 0;
+
+    // Drone de "sintonización de radio": suena solo junto al primer golpe (t=0), después fade out y se apaga.
+    {
+      const { centerFreq, wobbleRange, stepTime } = symbiosisToRadioParams(formData.compatibilityIndex);
+      const dur = Math.min(dronePulseDuration, duration);
+      const fadeIn = Math.min(0.3, dur * 0.25);
+      const fadeOut = Math.min(0.8, dur * 0.4);
+
+      const rGain = offlineCtx.createGain();
+      rGain.connect(musicBoxMaster);
+
+      const rOsc = offlineCtx.createOscillator();
+      rOsc.type = 'sine';
+      rOsc.frequency.setValueAtTime(centerFreq, 0);
+      rOsc.connect(rGain);
+
+      rGain.gain.setValueAtTime(0.0001, 0);
+      rGain.gain.linearRampToValueAtTime(VOLUME_RADIO_DRIFT, fadeIn);
+      rGain.gain.setValueAtTime(VOLUME_RADIO_DRIFT, Math.max(fadeIn, dur - fadeOut));
+      rGain.gain.exponentialRampToValueAtTime(0.0001, dur);
+
+      let t = 0;
+      while(t < dur){
+        const target = Math.max(80, centerFreq + (Math.random() * 2 - 1) * (wobbleRange / 2));
+        const rampTo = Math.min(dur, t + stepTime);
+        rOsc.frequency.linearRampToValueAtTime(target, rampTo);
+        t += stepTime;
+      }
+
+      rOsc.start(0);
+      rOsc.stop(dur);
+    }
 
     while(currentTime < duration){
       for(let step = 0; step < STEPS_PER_BAR; step++){
@@ -1562,6 +1911,11 @@ body{
 
         osc.start(when);
         osc.stop(when + 0.35);
+
+        // El drone del peso de la semilla golpea cada dos tiempos (cada 8 dieciseisavos)
+        if(step % 8 === 0){
+          scheduleDronePulse(offlineCtx, musicBoxMaster, offlineReverb, droneFreq, when, Math.min(dronePulseDuration, duration - when));
+        }
       }
       currentTime += barDuration;
     }
@@ -1630,7 +1984,19 @@ body{
   async function exportFichaPDF(){
     const passportEl = document.querySelector('.passport');
     const playBtnEl = document.getElementById('dnaPlayBtn');
-    if(!passportEl || typeof html2canvas === 'undefined' || !window.jspdf) return null;
+
+    if(!passportEl){
+      console.error('exportFichaPDF: no se encontró el elemento .passport en el DOM.');
+      return null;
+    }
+    if(typeof html2canvas === 'undefined'){
+      console.error('exportFichaPDF: html2canvas no está cargado (revisa vendor/html2canvas.min.js).');
+      return null;
+    }
+    if(!window.jspdf || !window.jspdf.jsPDF){
+      console.error('exportFichaPDF: jsPDF no está cargado (revisa vendor/jspdf.umd.min.js).');
+      return null;
+    }
 
     if(playBtnEl) playBtnEl.style.display = 'none';
 
@@ -1644,6 +2010,7 @@ body{
       doc = new jsPDF({ orientation: pdfHeight >= pdfWidth ? 'portrait' : 'landscape', unit: 'mm', format: [pdfWidth, pdfHeight] });
       doc.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
     }catch(err){
+      console.error('exportFichaPDF: falló la generación del PDF —', err);
       doc = null;
     } finally {
       if(playBtnEl) playBtnEl.style.display = 'flex';
@@ -1651,20 +2018,57 @@ body{
     return doc;
   }
 
+  async function sendRegistroToXml(){
+    try{
+      const guardianHex = (guardian && guardian.palette ? guardian.palette : []).map(p => rgbToHex(p.rgb));
+      const seedHex = (seed && seed.palette ? seed.palette : []).map(p => rgbToHex(p.rgb));
+      const res = await fetch('registrar_xml.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guardianName: formData.guardianName,
+          seedName: formData.seedName,
+          guardianHex,
+          seedHex
+        })
+      });
+      const data = await res.json().catch(() => null);
+      if(!data || !data.ok){
+        console.error('sendRegistroToXml: el servidor no confirmó el guardado —', data);
+        return false;
+      }
+      return true;
+    }catch(e){
+      console.error('sendRegistroToXml: no se pudo contactar registrar_xml.php —', e);
+      return false;
+    }
+  }
+
   async function finishExperienceAutoSave(){
     const slug = slugify(formData.guardianName);
+    const statusEl = document.getElementById('saveStatus');
+    const results = [];
+
+    if(statusEl) statusEl.textContent = 'Guardando ficha…';
 
     try{
       const doc = await exportFichaPDF();
       if(doc){
-        await saveBlobToServer(doc.output('blob'), `ficha-${slug}.pdf`);
+        const ok = await saveBlobToServer(doc.output('blob'), `ficha-${slug}.pdf`);
+        results.push(['Ficha (PDF)', ok]);
+      } else {
+        results.push(['Ficha (PDF)', false]);
       }
-    }catch(e){}
+    }catch(e){
+      console.error('finishExperienceAutoSave: error guardando la ficha PDF —', e);
+      results.push(['Ficha (PDF)', false]);
+    }
 
     await new Promise(r => setTimeout(r, 250));
 
     if(recordedAudioBlob){
-      await saveBlobToServer(recordedAudioBlob, `audio-guardian-${slug}.webm`);
+      const okAudio = await saveBlobToServer(recordedAudioBlob, `audio-guardian-${slug}.webm`);
+      results.push(['Audio del guardián', okAudio]);
       await new Promise(r => setTimeout(r, 250));
     }
 
@@ -1672,9 +2076,23 @@ body{
       const dur = await getRecordedAudioDuration();
       const musicBlob = await generateMusicBoxWebmBlob(dur);
       if(musicBlob){
-        await saveBlobToServer(musicBlob, `caja-musical-${slug}.webm`);
+        const okMusic = await saveBlobToServer(musicBlob, `caja-musical-${slug}.webm`);
+        results.push(['Caja musical', okMusic]);
       }
-    }catch(e){}
+    }catch(e){
+      console.error('finishExperienceAutoSave: error generando/guardando la caja musical —', e);
+      results.push(['Caja musical', false]);
+    }
+
+    const okXml = await sendRegistroToXml();
+    results.push(['Registro en registros.xml', okXml]);
+
+    if(statusEl){
+      const allOk = results.every(([, ok]) => ok);
+      const summary = results.map(([label, ok]) => (ok ? '✓ ' : '✗ ') + label).join(' · ');
+      statusEl.textContent = summary;
+      statusEl.style.color = allOk ? '#2a7a2a' : '#b33';
+    }
   }
 
   function setupDNAInteraction(){
@@ -1727,6 +2145,7 @@ body{
     document.getElementById('valGuardianWeight').textContent = formData.guardianWeight;
     document.getElementById('valSeed').textContent = formData.seedName;
     document.getElementById('valSeedOrigin').textContent = formData.seedOrigin;
+    document.getElementById('valSeedCenterOrigin').textContent = formData.seedCenterOrigin;
     document.getElementById('valSeedWeight').textContent = formData.seedWeight;
 
     const mixedCode = generateMixedCode(formData.guardianName, formData.seedName);
@@ -1741,6 +2160,7 @@ body{
     document.getElementById('passShape').textContent = analytics.shapeClass;
     document.getElementById('passCircularity').textContent = analytics.circularity;
     document.getElementById('passSymbiosis').textContent = analytics.symbiosis;
+    formData.compatibilityIndex = analytics.symbiosisValue;
 
     renderPaletteContainer('guardianPalettePreview', guardian.palette);
     renderPaletteContainer('seedPalettePreview', seed.palette);
@@ -1749,26 +2169,7 @@ body{
     renderPointillismDNA('dnaCanvas', combined);
     setupDNAInteraction();
 
-    setTimeout(async () => {
-      if(mapInstance){ mapInstance.remove(); mapInstance = null; }
-      mapInstance = L.map('map', { zoomControl: false, attributionControl: false }).setView([4.6, -74.0], 5);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance);
-
-      const [gCoords, sCoords] = await Promise.all([
-        geocodeLocation(formData.guardianOrigin),
-        geocodeLocation(formData.seedOrigin)
-      ]);
-
-      const defaultCoords = [1.2136, -77.2811];
-      const p1 = gCoords || defaultCoords;
-      const p2 = sCoords || [1.1491, -76.6472];
-
-      L.marker(p1).addTo(mapInstance).bindPopup(`<b>Guardián:</b> ${formData.guardianOrigin}`);
-      L.marker(p2).addTo(mapInstance).bindPopup(`<b>Semilla:</b> ${formData.seedOrigin}`);
-
-      const polyline = L.polyline([p1, p2], { color: '#000000', weight: 3, dashArray: '5, 5' }).addTo(mapInstance);
-      mapInstance.fitBounds(polyline.getBounds(), { padding: [30, 30] });
-    }, 200);
+    renderOriginTriangle('originCanvas', formData.guardianOrigin, formData.seedOrigin, formData.seedCenterOrigin);
 
     setTimeout(() => { finishExperienceAutoSave(); }, 900);
   }
@@ -1776,6 +2177,14 @@ body{
   restartBtn.addEventListener('click', () => {
     window.location.reload();
   });
+
+  const retrySaveBtn = document.getElementById('retrySaveBtn');
+  if(retrySaveBtn){
+    retrySaveBtn.addEventListener('click', () => {
+      retrySaveBtn.disabled = true;
+      finishExperienceAutoSave().finally(() => { retrySaveBtn.disabled = false; });
+    });
+  }
 })();
 </script>
 </body>

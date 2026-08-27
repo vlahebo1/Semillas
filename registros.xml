@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<registros>
+  <registro fecha="2026-08-18T21:57:30+00:00">
+    <guardian nombre="Ana Aguirre">
+      <color>#AAA49A</color>
+      <color>#A1988D</color>
+      <color>#B8B1A5</color>
+      <color>#2B2625</color>
+      <color>#755346</color>
+      <color>#B07766</color>
+      <color>#D6C4AF</color>
+      <color>#D69683</color>
+    </guardian>
+    <semilla nombre="Maíz amarillo nativo">
+      <color>#A69C91</color>
+      <color>#A89E93</color>
+      <color>#A1988C</color>
+      <color>#2F2D2A</color>
+      <color>#A99E90</color>
+      <color>#504C48</color>
+      <color>#ABA295</color>
+      <color>#7A746C</color>
+    </semilla>
+  </registro>
+  <registro fecha="2026-08-18T21:58:05+00:00">
+    <guardian nombre="Ana Aguirre">
+      <color>#AAA49A</color>
+      <color>#A1988D</color>
+      <color>#B8B1A5</color>
+      <color>#2B2625</color>
+      <color>#755346</color>
+      <color>#B07766</color>
+      <color>#D6C4AF</color>
+      <color>#D69683</color>
+    </guardian>
+    <semilla nombre="Maíz amarillo nativo">
+      <color>#A69C91</color>
+      <color>#A89E93</color>
+      <color>#A1988C</color>
+      <color>#2F2D2A</color>
+      <color>#A99E90</color>
+      <color>#504C48</color>
+      <color>#ABA295</color>
+      <color>#7A746C</color>
+    </semilla>
+  </registro>
+  <registro fecha="2026-08-18T21:59:27+00:00">
+    <guardian nombre="Sarita Sarita">
+      <color>#B3ADA4</color>
+      <color>#A59D92</color>
+      <color>#262322</color>
+      <color>#5C473E</color>
+      <color>#B97D6B</color>
+      <color>#8F6659</color>
+      <color>#D79985</color>
+      <color>#E5CABA</color>
+    </guardian>
+    <semilla nombre="Maíz amarillo nativo">
+      <color>#242323</color>
+      <color>#2A2928</color>
+      <color>#1F1E1E</color>
+      <color>#1A1819</color>
+      <color>#333231</color>
+      <color>#141212</color>
+      <color>#443F3D</color>
+      <color>#675B55</color>
+    </semilla>
+  </registro>
+  <registro fecha="2026-08-18T22:08:03+00:00">
+    <guardian nombre="Prueba">
+      <color>#252223</color>
+      <color>#A49E94</color>
+      <color>#ACA8A0</color>
+      <color>#785648</color>
+      <color>#B5B3AC</color>
+      <color>#999287</color>
+      <color>#BA7D6B</color>
+      <color>#C3B29C</color>
+    </guardian>
+    <semilla nombre="Maíz amarillo nativo">
+      <color>#201E1E</color>
+      <color>#262524</color>
+      <color>#1A1919</color>
+      <color>#2E2D2B</color>
+      <color>#3D3B39</color>
+      <color>#9B958C</color>
+      <color>#56524E</color>
+      <color>#75716C</color>
+    </semilla>
+  </registro>
+  <registro fecha="2026-08-18T23:23:29+00:00">
+    <guardian nombre="María Elena Ortiz">
+      <color>#171F25</color>
+      <color>#222E35</color>
+      <color>#1D262D</color>
+      <color>#07090A</color>
+      <color>#7E5745</color>
+      <color>#2F353A</color>
+      <color>#111417</color>
+      <color>#AC7B69</color>
+    </guardian>
+    <semilla nombre="Maíz amarillo nativo">
+      <color>#0F1215</color>
+      <color>#0B0E10</color>
+      <color>#090B0D</color>
+      <color>#15191C</color>
+      <color>#1E2227</color>
+      <color>#07090A</color>
+      <color>#050708</color>
+      <color>#030506</color>
+    </semilla>
+  </registro>
+</registros>
